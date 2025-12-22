@@ -63,10 +63,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          # Upload website folder (or dist if built)
-          path: |
-            website/
-            !website/node_modules/
+          # Upload website folder contents directly (not the folder itself)
+          path: website/
 
   deploy:
     environment:

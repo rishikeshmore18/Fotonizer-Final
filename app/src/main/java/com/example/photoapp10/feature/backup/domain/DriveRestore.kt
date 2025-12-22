@@ -17,6 +17,7 @@ class DriveRestore(
 ) {
     private val db = Modules.provideDb(context)
     private val storage = Modules.provideStorage(context)
+    private val thumbnailer = Modules.provideThumbnailer()
     private val json = Json { ignoreUnknownKeys = true }
 
     enum class Mode { MERGE_LATEST_WINS, REPLACE_ALL }
@@ -111,20 +112,45 @@ class DriveRestore(
             val photoDao = db.photoDao()
             var pIns = 0
             var pUpd = 0
+            var downloadedOk = 0
+            var missing = 0
             val total = root.photos.size
             
             root.photos.forEachIndexed { index, bp ->
                 try {
                     val existing = photoDao.getById(bp.id)
+                    
+                    // Smart restore: Skip if already backed up and up to date
+                    if (existing != null && 
+                        existing.backedUpAt > 0 && 
+                        existing.updatedAt >= bp.updatedAt) {
+                        Timber.d("DriveRestore: Skipping photo ${bp.id} - already up to date")
+                        onProgress(Progress("Restoring photos & downloading files", index + 1, total))
+                        return@forEachIndexed
+                    }
+                    
                     val dst = storage.photoFile(bp.albumId, bp.id)
                     
                     // Download the actual photo file from Drive
                     val photoDownloaded = downloadPhotoFile(bp.albumId, bp.id, dst)
                     if (!photoDownloaded) {
-                        Timber.w("DriveRestore: Failed to download photo file for ${bp.filename} (${bp.id})")
-                        // Continue with metadata restore even if file download fails
+                        missing++
+                        Timber.w("DriveRestore: missing remote file for photo ${bp.id}")
+                        // Skip DB upsert entirely if download failed
+                        onProgress(Progress("Restoring photos & downloading files", index + 1, total))
+                        return@forEachIndexed
                     } else {
+                        downloadedOk++
                         Timber.d("DriveRestore: Successfully downloaded photo file: ${dst.absolutePath}")
+                        
+                        // Immediately regenerate thumbnail after successful download
+                        try {
+                            val thumbFile = storage.thumbFile(bp.albumId, bp.id)
+                            val thumbResult = thumbnailer.generate(dst, thumbFile)
+                            Timber.d("DriveRestore: Generated thumbnail for photo ${bp.id}: ${thumbResult.path}")
+                        } catch (e: Exception) {
+                            Timber.e(e, "DriveRestore: Error generating thumbnail for photo ${bp.id}")
+                        }
                     }
                     
                     if (existing == null) {
@@ -134,7 +160,7 @@ class DriveRestore(
                                 albumId = bp.albumId,
                                 filename = bp.filename,
                                 path = dst.absolutePath, // Now points to downloaded file
-                                thumbPath = "", // Will be regenerated when needed
+                                thumbPath = storage.thumbFile(bp.albumId, bp.id).absolutePath, // Thumbnail path
                                 width = bp.width,
                                 height = bp.height,
                                 sizeBytes = bp.sizeBytes,
@@ -153,6 +179,7 @@ class DriveRestore(
                             albumId = bp.albumId,
                             filename = bp.filename,
                             path = dst.absolutePath, // Now points to downloaded file
+                            thumbPath = storage.thumbFile(bp.albumId, bp.id).absolutePath, // Thumbnail path
                             width = bp.width,
                             height = bp.height,
                             sizeBytes = bp.sizeBytes,
@@ -168,11 +195,32 @@ class DriveRestore(
                         Timber.d("DriveRestore: Skipped photo '${bp.filename}' (${bp.id}) - not newer")
                     }
                     
+                    // Mark photo as backed up after successful restore
+                    if (photoDownloaded) {
+                        photoDao.markAsBackedUp(bp.id, System.currentTimeMillis())
+                    }
+                    
                     onProgress(Progress("Restoring photos & downloading files", index + 1, total))
                 } catch (e: Exception) {
                     Timber.e(e, "DriveRestore: Failed to restore photo ${bp.id}")
+                    missing++
                     // Continue with other photos
                 }
+            }
+
+            // 6) Update album counts to stay consistent
+            try {
+                val albumDao = db.albumDao()
+                root.albums.forEach { album ->
+                    val photoCount = root.photos.count { it.albumId == album.id }
+                    albumDao.updateCounts(album.id, photoCount, System.currentTimeMillis())
+                }
+                Timber.d("DriveRestore: Updated album photo counts")
+                
+                // Mark all albums as backed up after successful restore
+                albumDao.markAllAsBackedUp(System.currentTimeMillis())
+            } catch (e: Exception) {
+                Timber.e(e, "DriveRestore: Failed to update album counts")
             }
 
             // Clean up temp file
@@ -180,6 +228,9 @@ class DriveRestore(
 
             val totalAlbums = aIns + aUpd
             val totalPhotos = pIns + pUpd
+            
+            // Log comprehensive summary
+            Timber.i("DriveRestore: downloadedOk=$downloadedOk missing=$missing")
             Timber.i("DriveRestore: Completed - Albums: $totalAlbums ($aIns new, $aUpd updated), Photos: $totalPhotos ($pIns new, $pUpd updated)")
             
             // Return counts (albums restored/updated not strictly required; we report photo count as progress)

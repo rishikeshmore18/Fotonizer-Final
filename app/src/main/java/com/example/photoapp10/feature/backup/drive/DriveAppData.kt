@@ -10,42 +10,83 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
-class DriveAppData(val drive: Drive) {
-    companion object { private const val BACKUP = "backup.json" }
+class DriveAppData(private val context: Context, val drive: Drive) {
+    companion object { 
+        private const val BACKUP = "backup.json"
+        private const val API_TIMEOUT_MS = 15000L // 15 second timeout per operation
+    }
 
     data class BackupFile(val id: String, val name: String, val modifiedTimeMillis: Long)
+
+    private suspend fun executeWithRetry(operation: suspend (Drive) -> Unit): Boolean {
+        return try {
+            withTimeout(API_TIMEOUT_MS) {
+                operation(drive)
+            }
+            true
+        } catch (e: Exception) {
+            if (e.message?.contains("401") == true || e.message?.contains("Unauthorized") == true) {
+                Log.w("DriveAppData", "Authentication error, attempting to refresh token")
+                val refreshedDrive = AuthManager.refreshDriveService(context, drive)
+                if (refreshedDrive != null) {
+                    try {
+                        withTimeout(API_TIMEOUT_MS) {
+                            operation(refreshedDrive)
+                        }
+                        true
+                    } catch (retryException: Exception) {
+                        Log.e("DriveAppData", "Operation failed even after token refresh", retryException)
+                        false
+                    }
+                } else {
+                    Log.e("DriveAppData", "Failed to refresh Drive service")
+                    false
+                }
+            } else {
+                Log.e("DriveAppData", "Non-authentication error", e)
+                false
+            }
+        }
+    }
 
     suspend fun findLatestBackup(): BackupFile? = withContext(Dispatchers.IO) {
         try {
             Log.d("DriveAppData", "Searching for latest backup in appDataFolder via Drive client")
 
-            val listRequest = drive.files().list()
-                .setSpaces("appDataFolder")
-                .setQ("name = '$BACKUP' and trashed = false")
-                .setFields("files(id,name,modifiedTime)")
-                .setOrderBy("modifiedTime desc")
-                .setPageSize(1)
+            var result: BackupFile? = null
+            val success = executeWithRetry { drive ->
+                val listRequest = drive.files().list()
+                    .setSpaces("appDataFolder")
+                    .setQ("name = '$BACKUP' and trashed = false")
+                    .setFields("files(id,name,modifiedTime)")
+                    .setOrderBy("modifiedTime desc")
+                    .setPageSize(1)
 
-            val fileList: FileList = listRequest.execute()
-            val files = fileList.files
+                val fileList: FileList = listRequest.execute()
+                val files = fileList.files
 
-            if (files.isNullOrEmpty()) {
-                Log.d("DriveAppData", "No backup.json found in appDataFolder")
-                return@withContext null
+                if (files.isNullOrEmpty()) {
+                    Log.d("DriveAppData", "No backup.json found in appDataFolder")
+                    result = null
+                } else {
+                    val file = files[0]
+                    val modifiedTime = file.modifiedTime?.value ?: 0L
+                    
+                    result = BackupFile(
+                        id = file.id,
+                        name = file.name,
+                        modifiedTimeMillis = modifiedTime
+                    )
+                    
+                    result?.let { backup ->
+                        Log.d("DriveAppData", "Found backup: ${backup.name} (${backup.id}) modified at ${backup.modifiedTimeMillis}")
+                    }
+                }
             }
-
-            val file = files[0]
-            val modifiedTime = file.modifiedTime?.value ?: 0L
             
-            val backupFile = BackupFile(
-                id = file.id,
-                name = file.name,
-                modifiedTimeMillis = modifiedTime
-            )
-            
-            Log.d("DriveAppData", "Found backup: ${backupFile.name} (${backupFile.id}) modified at ${backupFile.modifiedTimeMillis}")
-            return@withContext backupFile
+            return@withContext if (success) result else null
 
         } catch (e: Exception) {
             Log.e("DriveAppData", "Failed to find latest backup", e)
@@ -57,14 +98,17 @@ class DriveAppData(val drive: Drive) {
         try {
             Log.d("DriveAppData", "Downloading file $fileId to ${dst.absolutePath} via Drive client")
 
-            dst.parentFile?.mkdirs()
-            
-            val outputStream = FileOutputStream(dst)
-            drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
-            outputStream.close()
+            val success = executeWithRetry { drive ->
+                dst.parentFile?.mkdirs()
+                
+                val outputStream = FileOutputStream(dst)
+                drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
+                outputStream.close()
 
-            Log.d("DriveAppData", "Successfully downloaded file: ${dst.length()} bytes")
-            return@withContext true
+                Log.d("DriveAppData", "Successfully downloaded file: ${dst.length()} bytes")
+            }
+            
+            return@withContext success
 
         } catch (e: Exception) {
             Log.e("DriveAppData", "Failed to download file $fileId", e)
@@ -82,7 +126,7 @@ suspend fun driveAppDataOrNull(ctx: Context): DriveAppData? {
         }
 
         Log.d("DriveAppData", "Created DriveAppData with Drive client")
-        DriveAppData(drive)
+        DriveAppData(ctx, drive)
     } catch (e: Exception) {
         Log.e("DriveAppData", "Failed to create DriveAppData", e)
         null

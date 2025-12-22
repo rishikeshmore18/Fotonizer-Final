@@ -41,7 +41,9 @@ class SelectionState<T> {
                 android.util.Log.d("SelectionState", "Remaining items after removal: $remainingItems")
                 remainingItems.forEachIndexed { index, remainingItemId ->
                     newMap[remainingItemId] = index + 1
-                    newItemMap[remainingItemId] = _itemMap.value[remainingItemId]!!
+                    _itemMap.value[remainingItemId]?.let { item ->
+                        newItemMap[remainingItemId] = item
+                    }
                 }
                 
                 // Exit selection mode if no items selected
@@ -167,7 +169,7 @@ class SelectionState<T> {
             is com.example.photoapp10.feature.photo.data.PhotoEntity -> item.id
             is com.example.photoapp10.feature.album.data.AlbumEntity -> item.id
             else -> {
-                android.util.Log.e("SelectionState", "Unknown item type: ${item!!::class.simpleName}")
+                android.util.Log.e("SelectionState", "Unknown item type")
                 null
             }
         }

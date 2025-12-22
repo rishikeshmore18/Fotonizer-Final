@@ -237,3 +237,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Made with ❤️ for Android developers**
 
 *PhotoApp10 - Your photos, organized beautifully* 📸✨
+
+
+
+

@@ -90,9 +90,9 @@ class LocalBackup(
             )
 
             // Write backup.json
-            cr.openOutputStream(backupDoc.uri, "w")!!.use { 
+            cr.openOutputStream(backupDoc.uri, "w")?.use { 
                 it.write(json.encodeToString(root).toByteArray()) 
-            }
+            } ?: error("Failed to open output stream for backup.json")
 
             // Copy media
             val mediaDir = ensureDir(dir, "media")
@@ -208,9 +208,9 @@ class LocalBackup(
             val dir = DocumentFile.fromTreeUri(context, folderUri)
                 ?: error("Invalid folder")
             val backupDoc = dir.findFile("backup.json") ?: error("backup.json not found")
-            val root = context.contentResolver.openInputStream(backupDoc.uri)!!.use {
+            val root = context.contentResolver.openInputStream(backupDoc.uri)?.use {
                 json.decodeFromString<BackupRoot>(String(it.readBytes()))
-            }
+            } ?: error("Failed to open backup.json")
             require(root.schemaVersion == BACKUP_SCHEMA_VERSION) { "Unsupported backup schema." }
 
             if (options.mode == ImportOptions.Mode.REPLACE_ALL) {

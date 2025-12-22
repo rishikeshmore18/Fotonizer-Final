@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     id("org.jetbrains.kotlin.kapt")
     id("org.jetbrains.kotlin.plugin.serialization") version "2.0.20"
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -24,6 +25,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
+            isDebuggable = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -31,6 +34,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            isDebuggable = true
         }
     }
     compileOptions {
@@ -97,7 +101,12 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
-    // CameraX removed - using native camera intents instead
+    // CameraX for embedded camera preview
+    val cameraX = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraX")
+    implementation("androidx.camera:camera-camera2:$cameraX")
+    implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation("androidx.camera:camera-view:1.3.4")
 
     // Room (DB)
     val room = "2.7.0"
@@ -140,6 +149,7 @@ dependencies {
 
     // Logging
     implementation("com.jakewharton.timber:timber:5.0.1")
+    
 
     // Tests
     testImplementation("junit:junit:4.13.2")

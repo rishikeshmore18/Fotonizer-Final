@@ -478,3 +478,7 @@ PhotoRepository(photoDao, albumDao, storage, thumbnailer, sync)
 *DriveSyncManager implementation validated and approved*
 
 
+
+
+
+

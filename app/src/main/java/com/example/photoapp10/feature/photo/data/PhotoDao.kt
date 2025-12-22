@@ -90,4 +90,14 @@ interface PhotoDao {
 
     @Query("SELECT * FROM photos WHERE updatedAt > :since ORDER BY updatedAt ASC")
     suspend fun getChangedSince(since: Long): List<PhotoEntity>
+
+    // Backup status methods
+    @Query("SELECT * FROM photos WHERE backedUpAt = 0 ORDER BY updatedAt ASC")
+    suspend fun getUnbackedUpPhotos(): List<PhotoEntity>
+
+    @Query("UPDATE photos SET backedUpAt = :timestamp WHERE id = :photoId")
+    suspend fun markAsBackedUp(photoId: Long, timestamp: Long)
+
+    @Query("UPDATE photos SET backedUpAt = 0 WHERE id = :photoId")
+    suspend fun markAsNotBackedUp(photoId: Long)
 }

@@ -282,7 +282,7 @@ class AlbumDetailViewModel(app: Application, albumId: Long) : AndroidViewModel(a
             }
 
             // Add photo to repository
-            val photoId = photosRepo.addPhotoFromPath(
+            val (photoId, _) = photosRepo.addPhotoFromPath(
                 albumId = targetAlbumId,
                 originalPath = photoFile.absolutePath,
                 filename = filename,

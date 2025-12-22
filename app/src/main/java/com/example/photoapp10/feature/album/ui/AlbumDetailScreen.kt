@@ -1,11 +1,5 @@
 package com.example.photoapp10.feature.album.ui
 
-import android.app.Activity
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -20,16 +14,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.photoapp10.core.camera.CameraIntentHelper
+import com.example.photoapp10.R
 import com.example.photoapp10.core.di.Modules
 import com.example.photoapp10.core.selection.rememberSelectionState
 import com.example.photoapp10.feature.backup.SyncState
 import com.example.photoapp10.feature.photo.domain.SortMode
 import com.example.photoapp10.feature.photo.ui.PhotosGrid
-import com.example.photoapp10.R
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,83 +62,6 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
     // Cloud sync state
     val syncManager = Modules.provideDriveSyncManager(context)
     val syncState by syncManager.state.collectAsState()
-    
-    // Camera functionality
-    val cameraHelper = remember { CameraIntentHelper(context) }
-    var currentCameraData by remember { mutableStateOf<com.example.photoapp10.core.camera.CameraIntentData?>(null) }
-    
-    // Define mutable references for launchers to avoid forward reference issues
-    var cameraLauncherRef: androidx.activity.result.ActivityResultLauncher<android.content.Intent>? by remember { mutableStateOf(null) }
-    var cameraPermissionLauncherRef: androidx.activity.result.ActivityResultLauncher<String>? by remember { mutableStateOf(null) }
-    
-    // Function to launch camera
-    fun launchCamera() {
-        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            try {
-                val cameraData = cameraHelper.createCameraIntent(albumId)
-                currentCameraData = cameraData
-                cameraLauncherRef?.launch(cameraData.intent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to launch camera: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        } else {
-            cameraPermissionLauncherRef?.launch(android.Manifest.permission.CAMERA)
-        }
-    }
-    
-    // Camera launcher
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        when (result.resultCode) {
-            Activity.RESULT_OK -> {
-                currentCameraData?.let { cameraData ->
-                    scope.launch {
-                        try {
-                            if (cameraHelper.validatePhotoFile(cameraData.photoFile)) {
-                                vm.processCapturedPhoto(cameraData.photoFile, cameraData.photoFile.name)
-                                Toast.makeText(context, "Photo captured successfully", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Photo file is invalid or empty", Toast.LENGTH_LONG).show()
-                            }
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Failed to process photo: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            }
-            Activity.RESULT_CANCELED -> {
-                currentCameraData?.let { cameraData ->
-                    cameraHelper.cleanupPhotoFile(cameraData.photoFile)
-                }
-                Toast.makeText(context, "Photo capture cancelled", Toast.LENGTH_SHORT).show()
-            }
-            else -> {
-                currentCameraData?.let { cameraData ->
-                    cameraHelper.cleanupPhotoFile(cameraData.photoFile)
-                }
-                Toast.makeText(context, "Photo capture failed", Toast.LENGTH_SHORT).show()
-            }
-        }
-        currentCameraData = null
-    }
-    
-    // Camera permission launcher
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            launchCamera()
-        } else {
-            Toast.makeText(context, "Camera permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    // Initialize the launcher references
-    LaunchedEffect(Unit) {
-        cameraLauncherRef = cameraLauncher
-        cameraPermissionLauncherRef = cameraPermissionLauncher
-    }
     
     // Track current action mode
     var currentAction by remember { mutableStateOf<String?>(null) } // "favorite", "share", "delete"
@@ -373,7 +288,10 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                         }
                         
                         IconButton(
-                            onClick = { launchCamera() },
+                            onClick = { 
+                                // Navigate to CameraX screen for this album
+                                nav.navigate("camera/$albumId")
+                            },
                             modifier = Modifier.size(56.dp)
                         ) {
                             Icon(

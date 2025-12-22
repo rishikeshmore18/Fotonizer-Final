@@ -1,15 +1,14 @@
 package com.example.photoapp10.feature.backup.domain
 
 import com.example.photoapp10.core.db.AppDb
-import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 
 object BackupBuilders {
-    fun backupRootFromDb(db: AppDb): BackupRoot {
+    suspend fun backupRootFromDb(db: AppDb): BackupRoot {
         return try {
             Timber.d("BackupBuilders: Building backup from database")
             
-            val albums = runBlocking { db.albumDao().getAllOnce() }.map { a ->
+            val albums = db.albumDao().getAllOnce().map { a ->
                 BackupAlbum(
                     id = a.id,
                     name = a.name,
@@ -21,7 +20,7 @@ object BackupBuilders {
                 )
             }
             
-            val photos = runBlocking { db.photoDao().getAllOnce() }.map { p ->
+            val photos = db.photoDao().getAllOnce().map { p ->
                 BackupPhoto(
                     id = p.id,
                     albumId = p.albumId,

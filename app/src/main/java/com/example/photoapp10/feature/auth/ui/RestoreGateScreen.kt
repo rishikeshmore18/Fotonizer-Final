@@ -129,7 +129,7 @@ fun RestoreGateScreen(nav: NavController) {
                                     // Mark restore gate as shown before starting restore
                                     userPrefs.setRestoreGateShown(ctx, true)
                                     
-                                    val drive = driveAppDataOrNull(ctx)!!
+                                    val drive = driveAppDataOrNull(ctx) ?: return@launch
                                     val engine = DriveRestore(ctx, drive)
                                     val (albums, photos) = engine.restoreLatest(
                                         mode = DriveRestore.Mode.MERGE_LATEST_WINS

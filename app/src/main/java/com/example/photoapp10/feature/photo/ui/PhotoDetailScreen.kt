@@ -82,12 +82,41 @@ fun PhotoHorizontalPager(
     ) { page ->
         if (page < sortedPhotos.size) {
             val photo = sortedPhotos[page]
-            AsyncImage(
-                model = photo.path,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
-            )
+            val photoFile = File(photo.path)
+            
+            if (photoFile.exists()) {
+                AsyncImage(
+                    model = photo.path,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    error = painterResource(android.R.drawable.ic_menu_camera),
+                    placeholder = painterResource(android.R.drawable.ic_menu_camera)
+                )
+            } else {
+                // Show placeholder for missing photos
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            painter = painterResource(android.R.drawable.ic_menu_camera),
+                            contentDescription = "Photo not available",
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Photo not available",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -97,14 +126,16 @@ fun PhotoHorizontalPager(
 fun PhotoDetailScreen(
     photoId: Long,
     albumId: Long,
-    nav: NavController
+    nav: NavController,
+    photoPath: String? = null,
+    context: String? = null
 ) {
     val app = LocalContext.current.applicationContext as Application
     val vm: PhotoDetailViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(c: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
-                return PhotoDetailViewModel(app, photoId, albumId) as T
+                return PhotoDetailViewModel(app, photoId, albumId, photoPath, context) as T
             }
         }
     )
@@ -117,6 +148,30 @@ fun PhotoDetailScreen(
     // Track the currently viewed photo in the pager
     var currentPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
     
+    // Handle photoPath case - create a temporary PhotoEntity
+    val displayPhoto by remember(photoPath, photo) {
+        derivedStateOf {
+            if (photoPath != null && photo == null) {
+                // Create a temporary PhotoEntity for the file path
+                PhotoEntity(
+                    id = -1L, // Temporary ID
+                    albumId = albumId,
+                    filename = java.io.File(photoPath).name,
+                    path = photoPath,
+                    thumbPath = "", // No thumbnail for temporary photos
+                    width = 0,
+                    height = 0,
+                    sizeBytes = 0,
+                    takenAt = System.currentTimeMillis(),
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+            } else {
+                photo
+            }
+        }
+    }
+    
     // Handle snackbar messages
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let { message ->
@@ -125,15 +180,39 @@ fun PhotoDetailScreen(
         }
     }
 
-    if (photo == null) {
-        Text("Photo not found")
+    if (displayPhoto == null) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Photo not found", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = { nav.navigateUp() }) {
+                    Text("Go Back")
+                }
+            }
+        }
         return
     }
-    val p = photo!!
+    val p = displayPhoto ?: return
 
     // Initialize currentPhoto with the initial photo
     LaunchedEffect(p.id) {
         currentPhoto = p
+    }
+    
+    // Keep currentPhoto in sync with albumPhotos updates (for immediate UI updates)
+    val albumPhotos by vm.albumPhotos.collectAsState()
+    LaunchedEffect(albumPhotos) {
+        currentPhoto?.let { current ->
+            val updatedPhoto = albumPhotos.find { it.id == current.id }
+            if (updatedPhoto != null) {
+                currentPhoto = updatedPhoto
+            }
+        }
     }
 
     // State for caption editing - reactive to currentPhoto changes
@@ -163,12 +242,21 @@ fun PhotoDetailScreen(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Favorite button
-                    IconButton(onClick = { vm.toggleFavorite() }) {
+                    // Favorite button (disabled for temporary photos)
+                    IconButton(
+                        onClick = { 
+                            currentPhoto?.let { photo ->
+                                vm.toggleFavorite(photo.id)
+                            }
+                        },
+                        enabled = (currentPhoto?.id ?: 0L) > 0
+                    ) {
                         Icon(
-                            imageVector = if (p.favorite) Icons.Filled.Star else Icons.Outlined.Star,
-                            contentDescription = if (p.favorite) "Remove from favorites" else "Add to favorites",
-                            tint = if (p.favorite) Color(0xFF2196F3) else Color(0xFF666666), // Blue when favorited, gray when not
+                            imageVector = if (currentPhoto?.favorite == true) Icons.Filled.Star else Icons.Outlined.Star,
+                            contentDescription = if (currentPhoto?.favorite == true) "Remove from favorites" else "Add to favorites",
+                            tint = if ((currentPhoto?.id ?: 0L) > 0) {
+                                if (currentPhoto?.favorite == true) Color(0xFF2196F3) else Color(0xFF666666)
+                            } else Color(0xFFCCCCCC), // Grayed out for temporary photos
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -187,9 +275,16 @@ fun PhotoDetailScreen(
                         Icon(painterResource(android.R.drawable.ic_menu_share), contentDescription = "Share")
                     }
                     
-                    // Edit button
-                    IconButton(onClick = { isEditingCaption = !isEditingCaption }) {
-                        Icon(painterResource(android.R.drawable.ic_menu_edit), contentDescription = "Edit")
+                    // Edit button (disabled for temporary photos)
+                    IconButton(
+                        onClick = { isEditingCaption = !isEditingCaption },
+                        enabled = photoId > 0
+                    ) {
+                        Icon(
+                            painterResource(android.R.drawable.ic_menu_edit), 
+                            contentDescription = "Edit",
+                            tint = if (photoId > 0) Color.Unspecified else Color(0xFFCCCCCC)
+                        )
                     }
                     
                     // Delete button
@@ -207,11 +302,16 @@ fun PhotoDetailScreen(
                 .padding(inner)
         ) {
             // Smooth horizontal photo pager with native-like slide transitions
-            val albumPhotos by vm.albumPhotos.collectAsState()
+            // Handle photoPath case - create a single-item list for temporary photos
+            val photosToShow = if (photoPath != null && photo == null) {
+                displayPhoto?.let { listOf(it) } ?: emptyList()
+            } else {
+                albumPhotos
+            }
             
             PhotoHorizontalPager(
-                photos = albumPhotos,
-                currentPhotoId = photoId,
+                photos = photosToShow,
+                currentPhotoId = if (photoPath != null && photo == null) -1L else photoId,
                 modifier = Modifier.fillMaxSize(),
                 onPhotoChanged = { photo ->
                     currentPhoto = photo
@@ -285,16 +385,21 @@ fun PhotoDetailScreen(
 class PhotoDetailViewModel(
     app: Application,
     private val photoId: Long,
-    private val albumId: Long
+    private val albumId: Long,
+    private val photoPath: String? = null,
+    private val context: String? = null
 ) : AndroidViewModel(app) {
     private val photos: PhotoRepository = Modules.providePhotoRepository(app)
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage
 
-    // Get all photos in the album for navigation
-    val albumPhotos = photos.observePhotos(albumId, SortMode.DATE_NEW)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Get all photos for navigation based on context
+    val albumPhotos = when (context) {
+        "favorites" -> photos.observeFavorites(limit = 1000) // Get all favorites
+        "recents" -> photos.observeRecents(limit = 1000) // Get all recents
+        else -> photos.observePhotos(albumId, SortMode.DATE_NEW) // Get album photos
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         // Debug: Log when album photos are loaded
@@ -313,23 +418,36 @@ class PhotoDetailViewModel(
 
     init {
         viewModelScope.launch {
-            _photo.value = photos.getPhoto(photoId)
+            // Only try to get photo if photoId is valid (> 0)
+            if (photoId > 0) {
+                _photo.value = photos.getPhoto(photoId)
+            }
+            // If photoPath is provided, we'll handle it in the UI layer
         }
     }
 
-    fun toggleFavorite() = viewModelScope.launch {
-        photos.toggleFavorite(photoId)
-        refresh()
+    fun toggleFavorite(targetPhotoId: Long) = viewModelScope.launch {
+        if (targetPhotoId > 0) {
+            photos.toggleFavorite(targetPhotoId)
+            refresh()
+        }
     }
 
     fun updateCaption(photoId: Long, text: String) = viewModelScope.launch {
-        photos.updateCaption(photoId, text)
-        refresh()
+        if (photoId > 0) {
+            photos.updateCaption(photoId, text)
+            refresh()
+        }
     }
 
     fun requestDelete(onDone: () -> Unit) = viewModelScope.launch {
-        photos.deletePhoto(photoId)
-        onDone()
+        if (photoId > 0) {
+            photos.deletePhoto(photoId)
+            onDone()
+        } else {
+            // For temporary photos (from camera), just navigate back
+            onDone()
+        }
     }
 
     fun showSnackbar(message: String) {
@@ -341,6 +459,7 @@ class PhotoDetailViewModel(
     }
 
     fun navigateToPrevious(): Long? {
+        if (photoId <= 0) return null
         val photos = albumPhotos.value
         val currentIndex = photos.indexOfFirst { it.id == photoId }
         
@@ -352,6 +471,7 @@ class PhotoDetailViewModel(
     }
 
     fun navigateToNext(): Long? {
+        if (photoId <= 0) return null
         val photos = albumPhotos.value
         val currentIndex = photos.indexOfFirst { it.id == photoId }
         
@@ -364,8 +484,10 @@ class PhotoDetailViewModel(
 
     private fun refresh() = viewModelScope.launch {
         // Reload the photo after mutation and update the state
-        val updated = photos.getPhoto(photoId)
-        _photo.value = updated
+        if (photoId > 0) {
+            val updated = photos.getPhoto(photoId)
+            _photo.value = updated
+        }
     }
 }
 

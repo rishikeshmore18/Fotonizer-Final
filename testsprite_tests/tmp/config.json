@@ -2,15 +2,6 @@
   "status": "commited",
   "type": "backend",
   "scope": "codebase",
-  "localEndpoint": "http://localhost:8080",
-  "backendAuthType": "public",
-  "executionArgs": {
-    "projectName": "photoapp10",
-    "projectPath": "C:\\Users\\rish9\\AndroidStudioProjects\\photoapp10",
-    "testIds": [],
-    "additionalInstruction": "Analyze the Android PhotoApp10 project for bugs, production readiness, and code quality issues. Focus on authentication, data persistence, cloud sync, photo management, and UI components.",
-    "envs": {
-      "API_KEY": "sk-user-pYldjVPaUMnpt1808zEduK2BZ514fOfZI8kahO50bu0y6-WnoKNiGEsoVaPUzuJq8r2_WIY-rgafLhH1h7as2XfV91qW0UHIh1o8NaSUme0BHLZJdgvbbHA6-wqRVt6io48"
-    }
-  }
+  "localEndpoint": "http://localhost:5173",
+  "backendAuthType": "public"
 }

@@ -15,6 +15,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.border
+import androidx.compose.animation.animateColorAsState
+import kotlinx.coroutines.delay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -70,19 +75,11 @@ import com.example.photoapp10.core.selection.selectionBorder
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
-import android.app.Activity
-import android.content.Intent
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.filled.CameraAlt
-import com.example.photoapp10.core.camera.CameraIntentHelper
 import com.example.photoapp10.core.di.Modules
 import com.example.photoapp10.feature.auth.AuthManager
 import com.example.photoapp10.feature.backup.SyncState
 import com.example.photoapp10.feature.photo.domain.SortMode
 import com.example.photoapp10.R
-import androidx.core.content.ContextCompat
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -92,94 +89,6 @@ fun AlbumsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
-    // Camera intent helper
-    val cameraHelper = remember { CameraIntentHelper(context) }
-    
-    // Store current camera data for result processing
-    var currentCameraData by remember { mutableStateOf<com.example.photoapp10.core.camera.CameraIntentData?>(null) }
-    
-    // Define mutable references for launchers to avoid forward reference issues
-    var cameraLauncherRef: androidx.activity.result.ActivityResultLauncher<android.content.Intent>? by remember { mutableStateOf(null) }
-    var cameraPermissionLauncherRef: androidx.activity.result.ActivityResultLauncher<String>? by remember { mutableStateOf(null) }
-    
-    // Function to launch camera for a specific album
-    fun launchCamera(albumId: Long) {
-        // Check if camera permission is granted
-        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            try {
-                val cameraData = cameraHelper.createCameraIntent(albumId)
-                currentCameraData = cameraData
-                cameraLauncherRef?.launch(cameraData.intent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to launch camera: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        } else {
-            // Request camera permission
-            cameraPermissionLauncherRef?.launch(android.Manifest.permission.CAMERA)
-        }
-    }
-    
-    // Camera launcher with proper result handling
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        when (result.resultCode) {
-            Activity.RESULT_OK -> {
-                // Process the captured photo
-                currentCameraData?.let { cameraData ->
-                    scope.launch {
-                        try {
-                            // Validate the photo file
-                            if (cameraHelper.validatePhotoFile(cameraData.photoFile)) {
-                                // Process the photo and add to album
-                                vm.processCapturedPhoto(cameraData.photoFile, cameraData.photoFile.name)
-                                Toast.makeText(context, "Photo captured successfully", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Photo file is invalid or empty", Toast.LENGTH_LONG).show()
-                            }
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Failed to process photo: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            }
-            Activity.RESULT_CANCELED -> {
-                // Clean up the photo file if it was created
-                currentCameraData?.let { cameraData ->
-                    cameraHelper.cleanupPhotoFile(cameraData.photoFile)
-                }
-                Toast.makeText(context, "Photo capture cancelled", Toast.LENGTH_SHORT).show()
-            }
-            else -> {
-                // Clean up the photo file on error
-                currentCameraData?.let { cameraData ->
-                    cameraHelper.cleanupPhotoFile(cameraData.photoFile)
-                }
-                Toast.makeText(context, "Photo capture failed", Toast.LENGTH_SHORT).show()
-            }
-        }
-        // Clear the current camera data
-        currentCameraData = null
-    }
-    
-    // Camera permission launcher
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            // Permission granted, launch camera
-            launchCamera(0) // Default album
-        } else {
-            Toast.makeText(context, "Camera permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    // Initialize the launcher references
-    LaunchedEffect(Unit) {
-        cameraLauncherRef = cameraLauncher
-        cameraPermissionLauncherRef = cameraPermissionLauncher
-    }
     
     // Add comprehensive safety check for ViewModel
     if (vm == null) {
@@ -199,6 +108,10 @@ fun AlbumsScreen(
     // New album dialog state
     var showNewAlbumDialog by remember { mutableStateOf(false) }
     var newAlbumName by remember { mutableStateOf("") }
+    
+    // Highlight new album state
+    var highlightedAlbumId by remember { mutableStateOf<Long?>(null) }
+    val listState = rememberLazyListState()
 
     val albums by vm.albums.collectAsState()
     
@@ -362,8 +275,8 @@ fun AlbumsScreen(
                     // Camera button in the center (larger) - direct camera access
                     IconButton(
                         onClick = { 
-                            // Launch camera for default album (albumId = 0)
-                            launchCamera(0)
+                            // Navigate to CameraX screen for default album
+                            nav.navigate("camera/0")
                         },
                         modifier = Modifier.size(72.dp) // Larger than other icons
                     ) {
@@ -393,7 +306,8 @@ fun AlbumsScreen(
                                     text = { Text("Share") },
                                     onClick = { 
                                         try {
-                                            // TODO: Implement share functionality
+                                            // Share functionality not implemented yet
+                                            // This will be added in a future update
                                         } catch (e: Exception) {
                                             // Handle any errors gracefully
                                         }
@@ -449,9 +363,22 @@ fun AlbumsScreen(
                                     }
                                 )
                             } else {
-                                // Normal mode menu items - Local Backup first, then Sign Out
+                                // Normal mode menu items - Restore Sync, Local Backup, Sign Out
                                 DropdownMenuItem(
-                                    text = { Text("Local Backup") },
+                                    text = { Text("Restore Sync") },
+                                    onClick = { 
+                                        nav.navigate("restore_sync")
+                                        showMenu = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_cloud_sync),
+                                            contentDescription = "Restore Sync"
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Force Backup") },
                                     onClick = { 
                                         nav.navigate("backup")
                                         showMenu = false
@@ -459,7 +386,7 @@ fun AlbumsScreen(
                                     leadingIcon = {
                                         Icon(
                                             painter = painterResource(android.R.drawable.ic_menu_save),
-                                            contentDescription = "Local Backup"
+                                            contentDescription = "Force Backup"
                                         )
                                     }
                                 )
@@ -493,6 +420,7 @@ fun AlbumsScreen(
         }
     ) { inner ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(inner),
@@ -571,7 +499,8 @@ fun AlbumsScreen(
                             }
                         },
                         viewModel = vm,
-                        selectionState = selectionState
+                        selectionState = selectionState,
+                        highlightedAlbumId = highlightedAlbumId
                     )
                 }
             }
@@ -635,8 +564,20 @@ fun AlbumsScreen(
                             showNewAlbumDialog = false
                             newAlbumName = ""
                             if (id > 0) {
-                                // Navigate to the newly created album instead of opening camera
-                                nav.navigate("album/$id")
+                                // Stay on home screen and highlight the new album
+                                highlightedAlbumId = id
+                                
+                                // Auto-scroll to show the new album
+                                delay(100) // Allow list to update
+                                val albumIndex = safeAlbums.indexOfFirst { it.id == id }
+                                if (albumIndex >= 0) {
+                                    // Scroll to item (index 2 is the albums section in LazyColumn)
+                                    listState.animateScrollToItem(2)
+                                }
+                                
+                                // Clear highlight after 2 seconds
+                                delay(2000)
+                                highlightedAlbumId = null
                             }
                         }
                     }
@@ -726,7 +667,8 @@ private fun AlbumsGrid(
     onToggleFavorite: (AlbumEntity) -> Unit,
     onLongPress: (AlbumEntity) -> Unit,
     viewModel: AlbumsViewModel?,
-    selectionState: SelectionState<AlbumEntity>?
+    selectionState: SelectionState<AlbumEntity>?,
+    highlightedAlbumId: Long?
 ) {
     // Add comprehensive null safety checks
     if (items.isNullOrEmpty() || viewModel == null || selectionState == null) {
@@ -783,6 +725,7 @@ private fun AlbumsGrid(
                             },
                             viewModel = viewModel,
                             selectionState = selectionState,
+                            isHighlighted = album.id == highlightedAlbumId,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -806,6 +749,7 @@ private fun AlbumCard(
     onLongPress: () -> Unit,
     viewModel: AlbumsViewModel?,
     selectionState: SelectionState<AlbumEntity>?,
+    isHighlighted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // Add comprehensive null safety checks
@@ -817,6 +761,13 @@ private fun AlbumCard(
     val albumName = album.name?.ifBlank { "Unnamed Album" } ?: "Unnamed Album"
     val isFavorite = album.favorite ?: false
     val albumId = album.id ?: -1L
+    
+    // Blue glow animation for highlighted albums
+    val glowColor by animateColorAsState(
+        targetValue = if (isHighlighted) Color(0xFF2196F3) else Color.Transparent,
+        animationSpec = tween(durationMillis = 300),
+        label = "highlight_glow"
+    )
     
     Card(
         onClick = {
@@ -830,6 +781,11 @@ private fun AlbumCard(
         colors = CardDefaults.cardColors(containerColor = Color.LightGray),
         modifier = modifier
             .selectionBorder(selectionState.isSelected(album))
+            .border(
+                width = if (isHighlighted) 3.dp else 0.dp,
+                color = glowColor,
+                shape = RoundedCornerShape(12.dp)
+            )
             .pointerInput(Unit) {
                 detectTapGestures(
                     onLongPress = { 
@@ -893,9 +849,9 @@ private fun AlbumCard(
                 }
                 
                 // Show assigned emoji only (if any)
-                if (album.emoji != null && album.emoji!!.isNotBlank()) {
+                if (album.emoji?.isNotBlank() == true) {
                     Text(
-                        text = album.emoji!!,
+                        text = album.emoji,
                         style = MaterialTheme.typography.headlineMedium,
                         modifier = Modifier
                             .align(Alignment.TopStart)

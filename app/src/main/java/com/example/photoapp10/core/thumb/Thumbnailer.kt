@@ -49,9 +49,10 @@ class Thumbnailer {
                 ?: error("Failed to decode source image.")
         }
 
+        var oriented: Bitmap? = null
         try {
             // 3) Apply EXIF orientation
-            val oriented = applyExifOrientation(decoded, sourceFile)
+            oriented = applyExifOrientation(decoded, sourceFile)
 
             // 4) Scale to maxDim (long side)
             val (tw, th) = targetSize(oriented.width, oriented.height, maxDim)
@@ -71,6 +72,10 @@ class Thumbnailer {
         } finally {
             // Ensure underlying memory is freed promptly on N
             if (!decoded.isRecycled) decoded.recycle()
+            // Also recycle oriented bitmap if it's different from decoded
+            if (oriented != null && oriented !== decoded && !oriented.isRecycled) {
+                oriented.recycle()
+            }
         }
     }
 
@@ -121,15 +126,25 @@ class Thumbnailer {
             else -> return src
         }
         return try {
+            if (src.isRecycled) {
+                Timber.w("Source bitmap is already recycled")
+                return src
+            }
             val out = Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
-            if (out !== src && !src.isRecycled) src.recycle()
+            if (out !== src && !src.isRecycled) {
+                src.recycle()
+            }
             out
         } catch (e: OutOfMemoryError) {
             Timber.e(e, "OOM rotating bitmap")
             src // return original if rotate fails
+        } catch (e: Exception) {
+            Timber.e(e, "Error rotating bitmap")
+            src // return original if rotate fails
         }
     }
 }
+
 
 
 

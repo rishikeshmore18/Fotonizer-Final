@@ -64,7 +64,10 @@ class AppStorage(private val context: Context) {
     fun moveFile(source: File, destination: File): Boolean {
         return try {
             if (source.exists()) {
-                destination.parentFile?.mkdirs()
+                val parentDir = destination.parentFile
+                if (parentDir != null && !parentDir.exists()) {
+                    parentDir.mkdirs()
+                }
                 val success = source.renameTo(destination)
                 if (success) {
                     Timber.d("File moved: ${source.absolutePath} -> ${destination.absolutePath}")

@@ -66,5 +66,12 @@ interface AlbumDao {
     // Backup support - get all albums at once
     @Query("SELECT * FROM albums ORDER BY updatedAt DESC")
     suspend fun getAllOnce(): List<AlbumEntity>
+
+    // Backup status methods
+    @Query("UPDATE albums SET backedUpAt = :timestamp")
+    suspend fun markAllAsBackedUp(timestamp: Long)
+
+    @Query("UPDATE albums SET backedUpAt = 0 WHERE id = :albumId")
+    suspend fun markAlbumAsNotBackedUp(albumId: Long)
 }
 

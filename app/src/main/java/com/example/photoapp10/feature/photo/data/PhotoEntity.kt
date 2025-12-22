@@ -36,7 +36,9 @@ data class PhotoEntity(
     val favorite: Boolean = false,
     val takenAt: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** Backup status: 0 = not backed up, >0 = backed up timestamp */
+    val backedUpAt: Long = 0L
 )
 
 

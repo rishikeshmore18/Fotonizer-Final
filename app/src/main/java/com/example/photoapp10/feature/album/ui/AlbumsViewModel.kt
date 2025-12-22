@@ -182,14 +182,20 @@ class AlbumsViewModel(app: Application) : AndroidViewModel(app) {
             }
             
             // Determine album ID from file path
-            val albumId = extractAlbumIdFromPath(photoFile.absolutePath)
+            var albumId = extractAlbumIdFromPath(photoFile.absolutePath)
+            
+            // If albumId is 0 or invalid, ensure default album exists
             if (albumId <= 0) {
-                Timber.e("AlbumsViewModel: Could not determine album ID from path")
-                return@launch
+                Timber.d("AlbumsViewModel: Album ID is 0 or invalid, ensuring default album exists")
+                albumId = ensureDefaultAlbumExists()
+                if (albumId <= 0) {
+                    Timber.e("AlbumsViewModel: Failed to create or find default album")
+                    return@launch
+                }
             }
             
             // Add photo to repository
-            val photoId = photoRepo.addPhotoFromPath(
+            val (photoId, _) = photoRepo.addPhotoFromPath(
                 albumId = albumId,
                 originalPath = photoFile.absolutePath,
                 filename = filename,
@@ -209,6 +215,30 @@ class AlbumsViewModel(app: Application) : AndroidViewModel(app) {
             
         } catch (e: Exception) {
             Timber.e(e, "AlbumsViewModel: Error processing captured photo")
+        }
+    }
+    
+    /**
+     * Ensure the default album exists, create it if it doesn't
+     * @return The ID of the default album
+     */
+    private suspend fun ensureDefaultAlbumExists(): Long {
+        return try {
+            // Use the repository's built-in method to find or create default album
+            android.util.Log.d("AlbumsViewModel", "Ensuring default album exists")
+            val albumId = repo.findOrCreateDefaultAlbum()
+            
+            if (albumId > 0) {
+                android.util.Log.d("AlbumsViewModel", "Default album ID: $albumId")
+                refreshAlbums() // Refresh to show the album
+                albumId
+            } else {
+                android.util.Log.e("AlbumsViewModel", "Failed to create or find default album")
+                0L
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AlbumsViewModel", "Error ensuring default album exists", e)
+            0L
         }
     }
     

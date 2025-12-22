@@ -1,52 +1,52 @@
 [
   {
     "id": "TC001",
-    "title": "signinwithgoogleauthentication",
-    "description": "Test the /auth/signin POST endpoint to verify successful Google Sign-In authentication and correct response structure including success status and account details."
+    "title": "getphotospaginationfiltering",
+    "description": "Verify that the GET /photos endpoint correctly retrieves photos with pagination and supports filtering by albumId and sorting by different sort modes such as DATE_NEW, DATE_OLD, NAME_A_Z, and NAME_Z_A."
   },
   {
     "id": "TC002",
-    "title": "getallalbums",
-    "description": "Test the /albums GET endpoint to ensure it returns a list of albums with correct properties such as id, name, emoji, and favorite status."
+    "title": "addnewphoto",
+    "description": "Verify that the POST /photos endpoint successfully adds a new photo with required fields albumId, originalPath, and filename, and returns the created photo with a 201 status code."
   },
   {
     "id": "TC003",
-    "title": "createalbum",
-    "description": "Test the /albums POST endpoint to verify that a new album can be created successfully with valid name and emoji, and returns the correct status code."
+    "title": "getphotobyid",
+    "description": "Verify that the GET /photos/{photoId} endpoint retrieves the correct photo details when a valid photoId is provided, and returns 404 when the photoId does not exist."
   },
   {
     "id": "TC004",
-    "title": "updatealbum",
-    "description": "Test the /albums/{id} PUT endpoint to ensure an existing album can be updated correctly by id and returns a success status."
+    "title": "deletephotobyid",
+    "description": "Verify that the DELETE /photos/{photoId} endpoint deletes the specified photo when a valid photoId is provided, returning a 204 status code, and returns 404 if the photo does not exist."
   },
   {
     "id": "TC005",
-    "title": "deletealbum",
-    "description": "Test the /albums/{id} DELETE endpoint to verify that an album can be deleted by id and returns a success status."
+    "title": "getalbumslist",
+    "description": "Verify that the GET /albums endpoint retrieves the list of all albums successfully with a 200 status code."
   },
   {
     "id": "TC006",
-    "title": "getphotosinalbum",
-    "description": "Test the /photos GET endpoint with albumId query parameter to ensure it returns the list of photos in the specified album with correct properties."
+    "title": "createalbum",
+    "description": "Verify that the POST /albums endpoint creates a new album when provided with a valid name, returning the created album with a 201 status code."
   },
   {
     "id": "TC007",
-    "title": "addphototoalbum",
-    "description": "Test the /photos POST endpoint to verify that a photo file can be uploaded and added to a specified album successfully."
+    "title": "createbackup",
+    "description": "Verify that the POST /backup endpoint creates a backup of all photos and albums to Google Drive and returns backup details including backupId, timestamp, photosCount, and albumsCount with a 200 status code."
   },
   {
     "id": "TC008",
-    "title": "togglephotofavoritestatus",
-    "description": "Test the /photos/{id}/favorite PUT endpoint to ensure the favorite status of a photo can be toggled correctly by photo id."
+    "title": "restorefrombackup",
+    "description": "Verify that the POST /restore endpoint restores photos and albums from a Google Drive backup and returns the count of photosRestored and albumsRestored with a 200 status code."
   },
   {
     "id": "TC009",
-    "title": "startcloudsync",
-    "description": "Test the /backup/sync POST endpoint to verify that cloud synchronization with Google Drive starts successfully."
+    "title": "capturephoto",
+    "description": "Verify that the POST /camera/capture endpoint captures a photo using the device camera with specified albumId and quality, and returns the captured photo with a 201 status code."
   },
   {
     "id": "TC010",
-    "title": "searchalbumsandphotos",
-    "description": "Test the /search GET endpoint with query parameter to ensure it returns relevant search results for albums and photos."
+    "title": "searchphotos",
+    "description": "Verify that the GET /search endpoint searches photos by query string and optionally filters by albumId, returning matching photos with a 200 status code."
   }
 ]

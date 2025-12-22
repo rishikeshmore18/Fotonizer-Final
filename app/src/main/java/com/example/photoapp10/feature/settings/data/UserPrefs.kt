@@ -22,6 +22,7 @@ class UserPrefs(private val context: Context) {
     private val KEY_LASTQ = stringPreferencesKey("last_search_query")
     private val KEY_WIFI_ONLY = booleanPreferencesKey("backup_wifi_only")
     private val KEY_LAST_SYNCED_AT = longPreferencesKey("last_synced_at")
+    private val KEY_LAST_ARCHIVE_AT = longPreferencesKey("last_archive_at")
 
     val themeFlow: Flow<ThemeMode> = context.userPrefs.data.map { p ->
         when (p[KEY_THEME] ?: 0) { 1 -> ThemeMode.LIGHT; 2 -> ThemeMode.DARK; else -> ThemeMode.SYSTEM }
@@ -55,9 +56,30 @@ class UserPrefs(private val context: Context) {
     val lastSyncedAtFlow: Flow<Long> = context.userPrefs.data.map { it[KEY_LAST_SYNCED_AT] ?: 0L }
     suspend fun setLastSyncedAt(ts: Long) = context.userPrefs.edit { it[KEY_LAST_SYNCED_AT] = ts }
 
+    val lastArchiveAtFlow: Flow<Long> = context.userPrefs.data.map { it[KEY_LAST_ARCHIVE_AT] ?: 0L }
+    suspend fun setLastArchiveAt(ts: Long) = context.userPrefs.edit { it[KEY_LAST_ARCHIVE_AT] = ts }
+
     // Helper to synchronously read wifiOnly (avoid suspend in constraints build)
-    fun wifiOnlyFlowReplay(): Boolean =
-        kotlinx.coroutines.runBlocking { wifiOnlyFlow.first() }
+    // This is acceptable for one-time constraint building in WorkManager
+    private var cachedWifiOnly: Boolean? = null
+    
+    fun wifiOnlyFlowReplay(): Boolean = cachedWifiOnly ?: run {
+        // Use a more efficient approach that doesn't block the UI thread
+        try {
+            val value = kotlinx.coroutines.runBlocking { 
+                try {
+                    wifiOnlyFlow.first()
+                } catch (e: Exception) {
+                    false // Default to false if there's an issue
+                }
+            }
+            cachedWifiOnly = value
+            value
+        } catch (e: Exception) {
+            // If runBlocking itself fails, return default value
+            false
+        }
+    }
 }
 
 

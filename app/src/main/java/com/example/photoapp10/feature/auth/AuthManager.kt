@@ -41,11 +41,11 @@ object AuthManager {
         val account = getLastAccount(ctx) ?: return "User"
         
         return when {
-            !account.displayName.isNullOrBlank() -> account.displayName!!
-            !account.givenName.isNullOrBlank() -> account.givenName!!
+            !account.displayName.isNullOrBlank() -> account.displayName ?: "User"
+            !account.givenName.isNullOrBlank() -> account.givenName ?: "User"
             !account.email.isNullOrBlank() -> {
-                val emailPrefix = account.email!!.substringBefore("@")
-                if (emailPrefix.isNotBlank()) emailPrefix else "User"
+                val emailPrefix = account.email?.substringBefore("@")
+                if (emailPrefix?.isNotBlank() == true) emailPrefix else "User"
             }
             else -> "User"
         }
@@ -66,9 +66,10 @@ object AuthManager {
             Log.d("AuthManager", "Building Drive service for ${account.email}")
             
             // Get access token using GoogleAuthUtil
+            val accountObj = account.account ?: return@withContext null
             val token = GoogleAuthUtil.getToken(
                 ctx,
-                account.account!!,
+                accountObj,
                 "oauth2:$DRIVE_SCOPE"
             )
             
@@ -88,6 +89,44 @@ object AuthManager {
             
         } catch (e: Exception) {
             Log.e("AuthManager", "Failed to build Drive service", e)
+            null
+        }
+    }
+
+    /** Refresh Drive service with new token - call this when getting 401 errors */
+    suspend fun refreshDriveService(ctx: Context, oldDrive: Drive?): Drive? = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val account = getLastAccount(ctx) ?: run {
+                Log.e("AuthManager", "No Google account; user not signed in")
+                return@withContext null
+            }
+            
+            Log.d("AuthManager", "Refreshing Drive service for ${account.email}")
+            
+            // Force refresh the token
+            val accountObj = account.account ?: return@withContext null
+            val token = GoogleAuthUtil.getToken(
+                ctx,
+                accountObj,
+                "oauth2:$DRIVE_SCOPE"
+            )
+            
+            // Create new Drive service with refreshed token
+            val credential = GoogleCredential().setAccessToken(token)
+            
+            val drive = Drive.Builder(
+                NetHttpTransport(),
+                GsonFactory.getDefaultInstance(),
+                credential
+            )
+                .setApplicationName("PhotoApp10")
+                .build()
+            
+            Log.d("AuthManager", "Successfully refreshed Drive service")
+            drive
+            
+        } catch (e: Exception) {
+            Log.e("AuthManager", "Failed to refresh Drive service", e)
             null
         }
     }

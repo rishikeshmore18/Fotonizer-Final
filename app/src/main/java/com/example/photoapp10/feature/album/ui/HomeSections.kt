@@ -67,6 +67,17 @@ fun HomeSections(
                         unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
                         focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
                         unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                    ),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onSearch = {
+                            if (searchQuery.isNotBlank()) {
+                                val encodedQuery = URLEncoder.encode(searchQuery, StandardCharsets.UTF_8.toString())
+                                nav.navigate("search/query/$encodedQuery")
+                            }
+                        }
                     )
                 )
                 if (searchQuery.isNotBlank()) {
@@ -144,7 +155,7 @@ fun HomeSections(
         if (favorites.isEmpty()) {
             SectionEmpty("No favorites yet")
         } else {
-            PhotosRow(photos = favorites) { p -> nav.navigate("photo/${p.id}/${p.albumId}") }
+            PhotosRow(photos = favorites) { p -> nav.navigate("photo/favorites/${p.id}") }
         }
 
         Spacer(Modifier.height(12.dp))
@@ -153,7 +164,7 @@ fun HomeSections(
         if (recents.isEmpty()) {
             SectionEmpty("No recent photos")
         } else {
-            PhotosRow(photos = recents) { p -> nav.navigate("photo/${p.id}/${p.albumId}") }
+            PhotosRow(photos = recents) { p -> nav.navigate("photo/recents/${p.id}") }
         }
 
         Spacer(Modifier.height(16.dp))

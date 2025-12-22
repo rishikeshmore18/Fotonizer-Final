@@ -163,7 +163,9 @@ fun BackupScreen() {
                             Timber.i("BackupScreen: Export URI: $exportDirUri")
                             Timber.i("BackupScreen: Selected albums: $selectedAlbumIds")
                             scope.launch {
-                                vm.export(exportDirUri!!, selectedAlbumIds.toList())
+                                exportDirUri?.let { uri ->
+                                    vm.export(uri, selectedAlbumIds.toList())
+                                }
                             }
                         },
                         enabled = selectedAlbumIds.isNotEmpty() && progress == null,
@@ -236,7 +238,7 @@ fun BackupScreen() {
         if (progress != null) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(progress!!, style = MaterialTheme.typography.bodyMedium)
+                    Text(progress ?: "", style = MaterialTheme.typography.bodyMedium)
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
             }
@@ -247,7 +249,7 @@ fun BackupScreen() {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Report", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
-                    Text(report!!, style = MaterialTheme.typography.bodySmall)
+                    Text(report ?: "", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

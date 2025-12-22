@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.*
@@ -99,7 +100,16 @@ fun PhotosGrid(
                                     if (isSelectionMode.value) {
                                         selectionState?.toggleSelection(p)
                                     } else {
-                                        onPhotoClick(p)
+                                        // Check if photo file exists before navigating
+                                        val photoFile = java.io.File(p.path)
+                                        val thumbFile = if (p.thumbPath.isNotBlank()) java.io.File(p.thumbPath) else null
+                                        
+                                        if (photoFile.exists() || thumbFile?.exists() == true) {
+                                            onPhotoClick(p)
+                                        } else {
+                                            android.util.Log.w("PhotosGrid", "Photo file does not exist: ${p.path}")
+                                            // Could show a toast or snackbar here to inform user
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     android.util.Log.e("PhotosGrid", "Error in tap gesture", e)
@@ -120,7 +130,9 @@ fun PhotosGrid(
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    error = painterResource(android.R.drawable.ic_menu_camera),
+                    placeholder = painterResource(android.R.drawable.ic_menu_camera)
                 )
                 
                 // Selection badge overlay
@@ -171,6 +183,22 @@ fun PhotosGrid(
                             contentDescription = if (p.favorite) "Remove from favorites" else "Add to favorites",
                             tint = if (p.favorite) Color(0xFF2196F3) else Color(0xFF666666), // Blue when favorited, gray when not
                             modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                
+                // Backup status indicator
+                if (p.backedUpAt > 0) {
+                    Box(
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    ) {
+                        androidx.compose.material3.Icon(
+                            imageVector = Icons.Filled.CloudDone,
+                            contentDescription = "Backed up",
+                            tint = Color.Green,
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .size(16.dp)
                         )
                     }
                 }

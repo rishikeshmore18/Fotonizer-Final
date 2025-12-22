@@ -1,0 +1,8 @@
+# This is an example CNAME file
+# To use a custom domain:
+# 1. Rename this file to "CNAME" (remove .example)
+# 2. Replace "yourdomain.com" with your actual domain
+# 3. Configure DNS as described in README.md
+
+yourdomain.com
+

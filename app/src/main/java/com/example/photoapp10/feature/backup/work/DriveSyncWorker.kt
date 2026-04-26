@@ -4,19 +4,18 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.photoapp10.core.di.Modules
+import com.example.photoapp10.core.util.MediaFileSupport
 import com.example.photoapp10.feature.backup.drive.DriveUploader
-import com.example.photoapp10.feature.backup.domain.BackupBuilders.backupRootFromDb
 import com.example.photoapp10.feature.backup.drive.driveAppDataOrNull
+import com.example.photoapp10.feature.backup.domain.BackupBuilders.backupRootFromDb
 import com.example.photoapp10.feature.settings.data.UserPrefs
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 
 class DriveSyncWorker(
@@ -25,8 +24,9 @@ class DriveSyncWorker(
 ) : CoroutineWorker(context, params) {
 
     companion object {
-        private const val SYNC_TIMEOUT_MS = 180000L  // 3 minutes total timeout
-        private const val MAX_PHOTOS_PER_SYNC = 5    // Limit photos per sync to prevent long runs
+        private const val SYNC_TIMEOUT_MS = 600000L
+        private const val MAX_SYNC_RUNTIME_MS = 480000L
+        private const val MAX_SYNC_BYTES_PER_RUN = 256L * 1024L * 1024L
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -56,14 +56,16 @@ class DriveSyncWorker(
                 Timber.d("DriveSyncWorker: Checking for unbacked-up photos")
                 
                 val allUnbackedPhotos = db.photoDao().getUnbackedUpPhotos()
-                // Limit the number of photos processed in one sync to prevent long runs
-                val unbackedPhotos = allUnbackedPhotos.take(MAX_PHOTOS_PER_SYNC)
+                val unbackedPhotos = allUnbackedPhotos
                 
-                Timber.d("DriveSyncWorker: Found ${allUnbackedPhotos.size} total unbacked-up photos, processing ${unbackedPhotos.size} in this sync")
+                Timber.d("DriveSyncWorker: Found ${allUnbackedPhotos.size} total unbacked-up photos to process")
 
                 // Short-circuit if no changes
                 if (unbackedPhotos.isEmpty()) {
                     Timber.i("DriveSyncWorker: no pending changes")
+                    runCatching {
+                        Modules.provideDriveSyncManager(context).onWorkerFinished(true)
+                    }
                     return@withTimeout Result.success()
                 }
 
@@ -72,32 +74,47 @@ class DriveSyncWorker(
                 var uploadedOk = 0
                 var failed = 0
                 var allUploadsSucceeded = true
+                var uploadedBytes = 0L
+                val runStartedAt = System.currentTimeMillis()
+                var backlogRemaining = false
 
-                // Process photos one by one to avoid overwhelming the API
+                // Process photos/videos one by one to avoid overwhelming the API
                 unbackedPhotos.forEachIndexed { index, photo ->
                     try {
                         // Check if cancelled before each upload
                         ensureActive()
+
+                        val runtimeExceeded = uploadedOk > 0 && (System.currentTimeMillis() - runStartedAt) >= MAX_SYNC_RUNTIME_MS
+                        val byteBudgetExceeded = uploadedOk > 0 && uploadedBytes >= MAX_SYNC_BYTES_PER_RUN
+                        if (runtimeExceeded || byteBudgetExceeded) {
+                            backlogRemaining = true
+                            Timber.i("DriveSyncWorker: Reached sync budget after $uploadedOk uploads and $uploadedBytes bytes")
+                            return@forEachIndexed
+                        }
                         
-                        val file = storage.photoFile(photo.albumId, photo.id)
+                        // Extract file extension from filename
+                        val fileExtension = MediaFileSupport.normalizedExtension(photo.filename)
+                        val file = storage.photoFile(photo.albumId, photo.id, fileExtension)
                         if (file.exists()) {
                             val globalIndex = index + 1
-                            Timber.d("DriveSyncWorker: Uploading photo ${photo.filename} ($globalIndex/${unbackedPhotos.size})")
+                            val mediaType = if (MediaFileSupport.isVideoExtension(fileExtension)) "video" else "photo"
+                            Timber.d("DriveSyncWorker: Uploading $mediaType ${photo.filename} ($globalIndex/${unbackedPhotos.size})")
                             
-                            val success = uploader.putPhotoWithRetry(file, photo.albumId, photo.id)
+                            val success = uploader.putPhotoWithRetry(file, photo.albumId, photo.id, fileExtension)
                             if (success) {
-                                // Mark photo as backed up
+                                // Mark photo/video as backed up
                                 db.photoDao().markAsBackedUp(photo.id, System.currentTimeMillis())
                                 uploadedOk++
+                                uploadedBytes += file.length()
                             } else {
                                 failed++
                                 allUploadsSucceeded = false
-                                Timber.w("DriveSyncWorker: Failed to upload photo ${photo.id}")
+                                Timber.w("DriveSyncWorker: Failed to upload $mediaType ${photo.id}")
                             }
                         } else {
                             failed++
                             allUploadsSucceeded = false
-                            Timber.w("DriveSyncWorker: Photo file not found: ${file.absolutePath}")
+                            Timber.w("DriveSyncWorker: Photo/video file not found: ${file.absolutePath}")
                         }
                     } catch (e: CancellationException) {
                         Timber.d("DriveSyncWorker: Upload cancelled for photo ${photo.id}")
@@ -110,14 +127,18 @@ class DriveSyncWorker(
                     }
                 }
 
+                if (!backlogRemaining) {
+                    backlogRemaining = db.photoDao().getUnbackedUpPhotos().isNotEmpty()
+                }
+
                 // Log upload results
-                Timber.i("DriveSyncWorker: uploadedOk=$uploadedOk failed=$failed")
+                Timber.i("DriveSyncWorker: uploadedOk=$uploadedOk failed=$failed backlogRemaining=$backlogRemaining bytes=$uploadedBytes")
 
                 // Check if cancelled before final operations
                 ensureActive()
 
                 // 3) Upload backup.json only after all media uploads succeed
-                if (allUploadsSucceeded) {
+                if (allUploadsSucceeded && !backlogRemaining) {
                     Timber.d("DriveSyncWorker: Building and uploading backup.json")
                     val root = backupRootFromDb(db)
                     val json = Json { prettyPrint = true; encodeDefaults = true }
@@ -133,6 +154,12 @@ class DriveSyncWorker(
                         Timber.e(e, "DriveSyncWorker: Failed to upload backup.json")
                         allUploadsSucceeded = false
                     }
+                }
+
+                if (allUploadsSucceeded && backlogRemaining) {
+                    Timber.i("DriveSyncWorker: Backlog remains after this run, enqueueing continuation")
+                    Modules.provideDriveSyncManager(context).requestSync("continue_backlog")
+                    return@withTimeout Result.success()
                 }
 
                 // 4) Update timestamp only if everything succeeded
@@ -166,7 +193,7 @@ class DriveSyncWorker(
             }
             
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            Timber.e("DriveSyncWorker: Sync work timed out after 3 minutes")
+            Timber.e("DriveSyncWorker: Sync work timed out after 10 minutes")
             
             // Notify manager of timeout (treat as failure)
             runCatching {

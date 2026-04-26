@@ -17,9 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.photoapp10.core.util.MediaPreviewResolver
 import com.example.photoapp10.feature.photo.data.PhotoEntity
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
 @Composable
 fun HomeSections(
@@ -30,84 +29,19 @@ fun HomeSections(
     val recents by vm.recents.collectAsState()
     val albums  by vm.albums.collectAsState()
     val lastSearch by vm.lastQ.collectAsState()
-    
-    var searchQuery by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize()) {
-        // Search bar at the top
-        Card(
-            modifier = Modifier
-                .fillMaxWidth() // Full width end-to-end
-                .padding(horizontal = 12.dp, vertical = 2.dp), // Reduced vertical padding for thin appearance
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 3.dp), // Reduced vertical padding for thin appearance
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    painter = painterResource(android.R.drawable.ic_menu_search),
-                    contentDescription = "Search",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp) // Smaller search icon for thin bar
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Search albums and photos") },
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
-                    ),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        imeAction = androidx.compose.ui.text.input.ImeAction.Search
-                    ),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                        onSearch = {
-                            if (searchQuery.isNotBlank()) {
-                                val encodedQuery = URLEncoder.encode(searchQuery, StandardCharsets.UTF_8.toString())
-                                nav.navigate("search/query/$encodedQuery")
-                            }
-                        }
-                    )
-                )
-                if (searchQuery.isNotBlank()) {
-                    IconButton(
-                        onClick = { 
-                            val encodedQuery = URLEncoder.encode(searchQuery, StandardCharsets.UTF_8.toString())
-                            nav.navigate("search/query/$encodedQuery")
-                        },
-                        modifier = Modifier.size(28.dp) // Smaller send button for thin bar
-                    ) {
-                        Icon(
-                            painter = painterResource(android.R.drawable.ic_menu_send),
-                            contentDescription = "Search",
-                            modifier = Modifier.size(14.dp) // Smaller send icon for thin bar
-                        )
-                    }
-                }
-            }
-        }
+        AlbumSearchBar(nav = nav)
 
         // Recent search section - redesigned as "Recent Search" = "result" in one row
         if (lastSearch.isNotBlank()) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                    .clickable { 
-                        val encodedQuery = URLEncoder.encode(lastSearch, StandardCharsets.UTF_8.toString())
-                        nav.navigate("search/query/$encodedQuery") 
-                    },
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clickable { 
+                            navigateToSearch(nav, lastSearch, albumId = null)
+                        },
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -206,8 +140,11 @@ private fun PhotosRow(
         modifier = Modifier.fillMaxWidth()
     ) {
         items(photos, key = { it.id }) { p ->
+            val previewPath = remember(p.thumbPath, p.path) {
+                MediaPreviewResolver.resolvePreviewPath(p.thumbPath, p.path)
+            }
             AsyncImage(
-                model = p.thumbPath.ifBlank { p.path },
+                model = previewPath,
                 contentDescription = null,
                 modifier = Modifier
                     .size(96.dp)

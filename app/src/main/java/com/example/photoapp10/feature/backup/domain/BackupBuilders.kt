@@ -1,6 +1,7 @@
 package com.example.photoapp10.feature.backup.domain
 
 import com.example.photoapp10.core.db.AppDb
+import com.example.photoapp10.core.util.MediaFileSupport
 import timber.log.Timber
 
 object BackupBuilders {
@@ -16,11 +17,13 @@ object BackupBuilders {
                     photoCount = a.photoCount,
                     favorite = a.favorite,
                     emoji = a.emoji,
-                    updatedAt = a.updatedAt
+                    updatedAt = a.updatedAt,
+                    parentId = a.parentId
                 )
             }
             
             val photos = db.photoDao().getAllOnce().map { p ->
+                val fileExtension = MediaFileSupport.normalizedExtension(p.filename)
                 BackupPhoto(
                     id = p.id,
                     albumId = p.albumId,
@@ -36,7 +39,7 @@ object BackupBuilders {
                     updatedAt = p.updatedAt,
                     path = p.path,
                     thumbPath = p.thumbPath,
-                    relativePath = "photos/${p.albumId}/${p.id}.jpg"
+                    relativePath = MediaFileSupport.relativeMediaPath(p.albumId, p.id, fileExtension)
                 )
             }
             

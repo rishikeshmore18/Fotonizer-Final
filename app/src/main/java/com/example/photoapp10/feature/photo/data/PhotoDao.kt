@@ -22,6 +22,21 @@ interface PhotoDao {
     @Query("SELECT * FROM photos WHERE id = :photoId")
     suspend fun getById(photoId: Long): PhotoEntity?
 
+    @Query(
+        "SELECT * FROM photos " +
+            "WHERE albumId = :albumId AND filename = :filename AND takenAt = :takenAt AND sizeBytes = :sizeBytes " +
+            "LIMIT 1"
+    )
+    suspend fun findByNaturalKey(
+        albumId: Long,
+        filename: String,
+        takenAt: Long,
+        sizeBytes: Long
+    ): PhotoEntity?
+
+    @Query("SELECT * FROM photos WHERE albumId = :albumId AND filename = :filename LIMIT 1")
+    suspend fun findByAlbumAndFilename(albumId: Long, filename: String): PhotoEntity?
+
     @Query("SELECT COUNT(*) FROM photos WHERE albumId = :albumId")
     suspend fun countInAlbum(albumId: Long): Int
 
@@ -73,6 +88,9 @@ interface PhotoDao {
 
     @Query("SELECT * FROM photos WHERE albumId = :albumId AND (filename LIKE :query OR caption LIKE :query)")
     fun searchInAlbum(albumId: Long, query: String): Flow<List<PhotoEntity>>
+
+    @Query("SELECT * FROM photos WHERE albumId IN (:albumIds) AND (filename LIKE :query OR caption LIKE :query)")
+    fun searchInAlbums(albumIds: List<Long>, query: String): Flow<List<PhotoEntity>>
 
     // Favorites and recents
     @Query("SELECT * FROM photos WHERE favorite = 1 ORDER BY updatedAt DESC LIMIT :limit")

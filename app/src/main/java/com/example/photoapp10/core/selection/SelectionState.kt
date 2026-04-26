@@ -128,6 +128,32 @@ class SelectionState<T> {
         return _selectedItems.value.size
     }
     
+    /**
+     * Select all items from the provided list
+     */
+    fun selectAll(items: List<T>) {
+        try {
+            val newMap = SnapshotStateMap<Long, Int>()
+            val newItemMap = SnapshotStateMap<Long, T>()
+            
+            items.forEachIndexed { index, item ->
+                val itemId = getItemId(item)
+                if (itemId != null) {
+                    newMap[itemId] = index + 1
+                    newItemMap[itemId] = item
+                }
+            }
+            
+            _selectedItems.value = newMap
+            _itemMap.value = newItemMap
+            if (newMap.isNotEmpty()) {
+                _isSelectionMode.value = true
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SelectionState", "Error in selectAll", e)
+        }
+    }
+    
     fun validateSelectionState(): Boolean {
         val items = _selectedItems.value
         val numbers = items.values.toSet()

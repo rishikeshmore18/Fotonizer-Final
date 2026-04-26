@@ -36,12 +36,52 @@ class AlbumRepository(
             albumDao.observeAlbumsDateNew() // Favorites first is already handled by ORDER BY favorite DESC
         }
     }
+    
+    // Observe albums by parent (for nested folders)
+    fun observeAlbumsByParent(parentId: Long, sort: SortMode = SortMode.DATE_NEW): Flow<List<AlbumEntity>> = when (sort) {
+        SortMode.DATE_NEW -> albumDao.observeAlbumsByParentDateNew(parentId)
+        SortMode.DATE_OLD -> albumDao.observeAlbumsByParentDateOld(parentId)
+        SortMode.NAME_ASC -> albumDao.observeAlbumsByParentNameAsc(parentId)
+        SortMode.NAME_DESC -> albumDao.observeAlbumsByParentNameDesc(parentId)
+        SortMode.FAV_FIRST -> albumDao.observeAlbumsByParentDateNew(parentId)
+    }
+    
+    suspend fun getChildAlbumsCount(parentId: Long): Int = albumDao.getChildAlbumsCount(parentId)
+    
+    suspend fun hasChildAlbums(albumId: Long): Boolean = albumDao.hasChildAlbums(albumId)
+    
+    suspend fun getAlbumById(albumId: Long): AlbumEntity? = albumDao.getById(albumId)
 
-    suspend fun createAlbum(name: String): Long {
+    fun observeAllAlbums(): Flow<List<AlbumEntity>> = albumDao.observeAllAlbums()
+    
+    suspend fun getBreadcrumbPath(albumId: Long): List<AlbumEntity> {
+        val path = mutableListOf<AlbumEntity>()
+        var current: AlbumEntity? = albumDao.getById(albumId)
+        while (current != null) {
+            path.add(0, current) // Add to front to maintain order
+            current = current.parentId?.let { albumDao.getById(it) }
+        }
+        return path
+    }
+
+    suspend fun createAlbum(name: String, parentId: Long? = null): Long {
+        // Prevent nesting the "default" album
+        if (name.trim().lowercase() == "default") {
+            throw IllegalArgumentException("Cannot create nested 'default' album")
+        }
+        
+        // Prevent creating albums inside the default album
+        if (parentId != null) {
+            val parent = albumDao.getById(parentId)
+            if (parent?.name?.lowercase() == "default") {
+                throw IllegalArgumentException("Cannot create albums inside 'default' album")
+            }
+        }
+        
         val now = System.currentTimeMillis()
-        val uniqueName = generateUniqueAlbumName(name.trim())
+        val uniqueName = generateUniqueAlbumName(name.trim(), parentId)
         val id = albumDao.upsert(
-            AlbumEntity(name = uniqueName, updatedAt = now)
+            AlbumEntity(name = uniqueName, updatedAt = now, parentId = parentId)
         )
         syncManager?.requestSync("createAlbum")
         archiveManager?.requestArchive("createAlbum")
@@ -51,10 +91,11 @@ class AlbumRepository(
     /**
      * Generates a unique album name by appending a counter suffix if duplicates exist
      * Example: "My Album" -> "My Album(1)" -> "My Album(2)" etc.
+     * @param parentId If provided, checks uniqueness within that parent folder
      */
-    private suspend fun generateUniqueAlbumName(baseName: String): String {
-        // Check if the base name is already unique
-        if (albumDao.getByName(baseName) == null) {
+    private suspend fun generateUniqueAlbumName(baseName: String, parentId: Long?): String {
+        // Check if the base name is already unique within the parent
+        if (albumDao.getByNameAndParent(baseName, parentId) == null) {
             return baseName
         }
         
@@ -64,7 +105,7 @@ class AlbumRepository(
         do {
             candidateName = "$baseName($counter)"
             counter++
-        } while (albumDao.getByName(candidateName) != null)
+        } while (albumDao.getByNameAndParent(candidateName, parentId) != null)
         
         return candidateName
     }
@@ -89,6 +130,14 @@ class AlbumRepository(
     }
 
     suspend fun deleteAlbum(entity: AlbumEntity) {
+        // Check if album has child albums - if so, delete them recursively
+        val childAlbums = albumDao.getChildAlbums(entity.id)
+        
+        // Delete child albums first (cascade)
+        childAlbums.forEach { child ->
+            deleteAlbum(child)
+        }
+        
         // Cascade will delete photos due to FK; file cleanup handled at higher layer if needed
         albumDao.delete(entity)
         syncManager?.requestSync("deleteAlbum")
@@ -121,8 +170,21 @@ class AlbumRepository(
     }
 
     suspend fun updateCoverFromFirstPhoto(albumId: Long) {
-        val firstPhotoId = albumDao.getFirstPhotoId(albumId)
+        val firstPhotoId = findRepresentativeCoverPhotoId(albumId)
         albumDao.setCover(albumId, firstPhotoId, System.currentTimeMillis())
     }
-}
 
+    private suspend fun findRepresentativeCoverPhotoId(albumId: Long): Long? {
+        albumDao.getFirstPhotoId(albumId)?.let { return it }
+
+        val childAlbums = albumDao.getChildAlbums(albumId)
+        childAlbums.forEach { child ->
+            val childCoverId = findRepresentativeCoverPhotoId(child.id)
+            if (childCoverId != null) {
+                return childCoverId
+            }
+        }
+
+        return null
+    }
+}

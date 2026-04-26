@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.photoapp10.core.account.AccountScopeManager
 import com.example.photoapp10.core.di.Modules
 import com.example.photoapp10.feature.auth.AuthManager
 import com.example.photoapp10.feature.backup.drive.driveAppDataOrNull
@@ -69,6 +70,8 @@ fun SettingsScreen(navController: NavController) {
         OutlinedButton(
             onClick = {
                 Timber.d("SettingsScreen: Sign out & forget device clicked")
+                Modules.resetForAccountChange()
+                AccountScopeManager.clearActiveAccount(context)
                 AuthManager.signOut(context) {
                     scope.launch { 
                         userPrefs.setRememberDevice(context, false)

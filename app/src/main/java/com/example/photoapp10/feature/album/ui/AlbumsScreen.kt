@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.border
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.combinedClickable
 import kotlinx.coroutines.delay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -44,6 +45,9 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FabPosition
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.foundation.text.KeyboardActions
@@ -72,14 +76,17 @@ import com.example.photoapp10.core.selection.SelectionState
 import com.example.photoapp10.core.selection.rememberSelectionState
 import com.example.photoapp10.core.selection.SelectionBadge
 import com.example.photoapp10.core.selection.selectionBorder
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
+import com.example.photoapp10.core.copymove.rememberCopyMoveState
+import com.example.photoapp10.core.copymove.CopyMoveService
 import androidx.compose.material.icons.Icons
 import com.example.photoapp10.core.di.Modules
+import com.example.photoapp10.core.account.AccountScopeManager
+import com.example.photoapp10.core.account.TempModeManager
 import com.example.photoapp10.feature.auth.AuthManager
 import com.example.photoapp10.feature.backup.SyncState
 import com.example.photoapp10.feature.photo.domain.SortMode
-import com.example.photoapp10.R
+import com.example.photoapp10.ui.theme.FavoriteStarColor
+import com.rishikeshmore.fotonizer.R
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -105,9 +112,18 @@ fun AlbumsScreen(
     // Selection state
     val selectionState = rememberSelectionState<AlbumEntity>()
     
+    // Copy/Move state
+    val copyMoveState = rememberCopyMoveState()
+    
     // New album dialog state
     var showNewAlbumDialog by remember { mutableStateOf(false) }
     var newAlbumName by remember { mutableStateOf("") }
+    
+    // Progress dialog state
+    var showProgressDialog by remember { mutableStateOf(false) }
+    var progressMessage by remember { mutableStateOf("") }
+    var progressCurrent by remember { mutableStateOf(0) }
+    var progressTotal by remember { mutableStateOf(1) }
     
     // Highlight new album state
     var highlightedAlbumId by remember { mutableStateOf<Long?>(null) }
@@ -148,15 +164,24 @@ fun AlbumsScreen(
         emptyList<AlbumEntity>()
     }
 
-    // Update cover images when albums change - safer implementation
-    LaunchedEffect(Unit) {
-        try {
-            kotlinx.coroutines.delay(100) // Small delay to ensure ViewModel is ready
-            vm.updateCovers()
-        } catch (e: Exception) {
-            timber.log.Timber.e(e, "Error updating covers in LaunchedEffect")
+    val albumsMissingCover = remember(safeAlbums) {
+        safeAlbums.any { album ->
+            album.id > 0 && album.photoCount > 0 && (album.coverPhotoId == null || album.coverPhotoId <= 0)
         }
     }
+
+    LaunchedEffect(albumsMissingCover, safeAlbums.size) {
+        if (!albumsMissingCover) return@LaunchedEffect
+        try {
+            vm.updateCovers()
+        } catch (e: Exception) {
+            timber.log.Timber.e(e, "Error updating missing album covers")
+        }
+    }
+    
+    // Note: Back button is allowed to work in copy/move mode
+    // The state persists across navigation, so users can navigate between albums
+    // and paste in different locations. The mode only exits via Paste or Cancel buttons.
 
     Scaffold(
         topBar = {
@@ -253,56 +278,279 @@ fun AlbumsScreen(
         },
         bottomBar = {
             BottomAppBar {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Create Album button on the left
-                    IconButton(
-                        onClick = { 
-                            showNewAlbumDialog = true
-                        },
-                        modifier = Modifier.size(48.dp) // Standard size
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.create_new_folder_24),
-                            contentDescription = "Create Album",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    
-                    // Camera button in the center (larger) - direct camera access
-                    IconButton(
-                        onClick = { 
-                            // Navigate to CameraX screen for default album
-                            nav.navigate("camera/0")
-                        },
-                        modifier = Modifier.size(72.dp) // Larger than other icons
-                    ) {
-                        Icon(
-                            painter = painterResource(android.R.drawable.ic_menu_camera),
-                            contentDescription = "Camera",
-                            modifier = Modifier.size(40.dp) // Larger icon
-                        )
-                    }
-                    
-                    // Hamburger menu on the right
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(
-                                painter = painterResource(R.drawable.menu_24),
-                                contentDescription = "Menu"
-                            )
-                        }
-                        
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
+                when {
+                    // Paste mode - show Paste/Cancel
+                    copyMoveState.hasPendingOperation() -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (selectionState.isSelectionMode.value) {
-                                // Selection mode menu items
-                                DropdownMenuItem(
+                            // Cancel button
+                            TextButton(onClick = { 
+                                copyMoveState.clear()
+                            }) {
+                                Text("Cancel")
+                            }
+                            
+                            // Paste button
+                            Button(onClick = {
+                                // Paste operation will be handled when user navigates to destination
+                                // For root level, paste to root (null parentId)
+                                scope.launch {
+                                    try {
+                                        showProgressDialog = true
+                                        progressMessage = "Pasting..."
+                                        progressCurrent = 0
+                                        progressTotal = 1
+                                        
+                                        val copyMoveService = CopyMoveService(
+                                            albumDao = Modules.provideDb(context).albumDao(),
+                                            photoDao = Modules.provideDb(context).photoDao(),
+                                            albumRepo = Modules.provideAlbumRepository(context),
+                                            photoRepo = Modules.providePhotoRepository(context),
+                                            storage = Modules.provideStorage(context)
+                                        )
+                                        
+                                        val albumIds = copyMoveState.getSelectedAlbumIds()
+                                        val photoIds = copyMoveState.getSelectedPhotoIds()
+                                        val operationType = copyMoveState.operationType.value
+                                        
+                                        val result = if (operationType == com.example.photoapp10.core.copymove.CopyMoveState.OperationType.COPY) {
+                                            copyMoveService.copyItems(
+                                                albumIds = albumIds,
+                                                photoIds = photoIds,
+                                                targetAlbumId = null, // Root level
+                                                progressCallback = { msg, current, total ->
+                                                    progressMessage = msg
+                                                    progressCurrent = current
+                                                    progressTotal = total
+                                                }
+                                            )
+                                        } else {
+                                            copyMoveService.moveItems(
+                                                albumIds = albumIds,
+                                                photoIds = photoIds,
+                                                targetAlbumId = null, // Root level
+                                                progressCallback = { msg, current, total ->
+                                                    progressMessage = msg
+                                                    progressCurrent = current
+                                                    progressTotal = total
+                                                }
+                                            )
+                                        }
+                                        
+                                        showProgressDialog = false
+                                        
+                                        if (result.isSuccess) {
+                                            Toast.makeText(
+                                                context,
+                                                "${operationType?.name ?: "Operation"} completed: ${result.albumsCopied} albums, ${result.photosCopied} items",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Operation completed with errors: ${result.errors.joinToString()}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                        
+                                        copyMoveState.clear()
+                                        selectionState.clearSelection()
+                                    } catch (e: Exception) {
+                                        showProgressDialog = false
+                                        Toast.makeText(
+                                            context,
+                                            "Error: ${e.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        timber.log.Timber.e(e, "Error during paste operation")
+                                    }
+                                }
+                            }) {
+                                Text("Paste")
+                            }
+                            
+                            // Hamburger menu
+                            Box {
+                                IconButton(onClick = { showMenu = true }) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.menu_24),
+                                        contentDescription = "Menu"
+                                    )
+                                }
+                                
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    // Menu items can be added here if needed in paste mode
+                                    // For now, keeping it simple
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Selection mode - show Copy/Move/Cancel
+                    selectionState.isSelectionMode.value -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Cancel button
+                            TextButton(onClick = { 
+                                selectionState.clearSelection()
+                            }) {
+                                Text("Cancel")
+                            }
+                            
+                            // Copy button
+                            Button(onClick = {
+                                val selectedAlbums = selectionState.getSelectedItems()
+                                copyMoveState.startCopy(selectedAlbums, emptyList())
+                                selectionState.clearSelection()
+                            }) {
+                                Text("Copy")
+                            }
+                            
+                            // Move button
+                            Button(onClick = {
+                                val selectedAlbums = selectionState.getSelectedItems()
+                                copyMoveState.startMove(selectedAlbums, emptyList())
+                                selectionState.clearSelection()
+                            }) {
+                                Text("Move")
+                            }
+                            
+                            // Hamburger menu
+                            Box {
+                                IconButton(onClick = { showMenu = true }) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.menu_24),
+                                        contentDescription = "Menu"
+                                    )
+                                }
+                                
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Select All") },
+                                        onClick = {
+                                            selectionState.selectAll(safeAlbums)
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                painter = painterResource(android.R.drawable.ic_menu_agenda),
+                                                contentDescription = "Select All"
+                                            )
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Share") },
+                                        onClick = {
+                                            // Share functionality not implemented yet
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                painter = painterResource(android.R.drawable.ic_menu_share),
+                                                contentDescription = "Share"
+                                            )
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Favorite") },
+                                        onClick = {
+                                            selectionState.getSelectedItems().forEach { album ->
+                                                vm.toggleFavorite(album.id)
+                                            }
+                                            selectionState.clearSelection()
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                painter = painterResource(android.R.drawable.btn_star_big_on),
+                                                contentDescription = "Favorite"
+                                            )
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Delete") },
+                                        onClick = {
+                                            val selectedAlbums = selectionState.getSelectedItems()
+                                            vm.deleteAlbums(selectedAlbums)
+                                            selectionState.clearSelection()
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                painter = painterResource(android.R.drawable.ic_menu_delete),
+                                                contentDescription = "Delete"
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Normal mode - show regular buttons
+                    else -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Create Album button on the left
+                            IconButton(
+                                onClick = { 
+                                    showNewAlbumDialog = true
+                                },
+                                modifier = Modifier.size(48.dp) // Standard size
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.create_new_folder_24),
+                                    contentDescription = "Create Album",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            
+                            // Camera button in the center (larger) - direct camera access
+                            IconButton(
+                                onClick = { 
+                                    // Navigate to CameraX screen for default album
+                                    nav.navigate("camera/0")
+                                },
+                                modifier = Modifier.size(72.dp) // Larger than other icons
+                            ) {
+                                Icon(
+                                    painter = painterResource(android.R.drawable.ic_menu_camera),
+                                    contentDescription = "Camera",
+                                    modifier = Modifier.size(40.dp) // Larger icon
+                                )
+                            }
+                            
+                            // Hamburger menu on the right
+                            Box {
+                                IconButton(onClick = { showMenu = true }) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.menu_24),
+                                        contentDescription = "Menu"
+                                    )
+                                }
+                                
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    if (selectionState.isSelectionMode.value) {
+                                        // Selection mode menu items
+                                        DropdownMenuItem(
                                     text = { Text("Share") },
                                     onClick = { 
                                         try {
@@ -319,9 +567,9 @@ fun AlbumsScreen(
                                             contentDescription = "Share"
                                         )
                                     }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Favorite") },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Favorite") },
                                     onClick = { 
                                         try {
                                             selectionState.getSelectedItems().forEach { album ->
@@ -340,9 +588,9 @@ fun AlbumsScreen(
                                             contentDescription = "Favorite"
                                         )
                                     }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Delete") },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Delete") },
                                     onClick = { 
                                         try {
                                             // Delete selected albums
@@ -361,57 +609,129 @@ fun AlbumsScreen(
                                             contentDescription = "Delete"
                                         )
                                     }
-                                )
-                            } else {
-                                // Normal mode menu items - Restore Sync, Local Backup, Sign Out
-                                DropdownMenuItem(
-                                    text = { Text("Restore Sync") },
-                                    onClick = { 
-                                        nav.navigate("restore_sync")
-                                        showMenu = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.ic_cloud_sync),
-                                            contentDescription = "Restore Sync"
                                         )
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Force Backup") },
-                                    onClick = { 
-                                        nav.navigate("backup")
-                                        showMenu = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            painter = painterResource(android.R.drawable.ic_menu_save),
-                                            contentDescription = "Force Backup"
-                                        )
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Sign Out") },
-                                    onClick = { 
-                                        showMenu = false
-                                        try {
-                                            AuthManager.signOut(context) {
-                                                // Navigate back to sign in screen after successful sign out
-                                                nav.navigate("signin") {
-                                                    popUpTo(0) { inclusive = true } // Clear entire navigation stack
+                                    } else {
+                                        val isTempMode = TempModeManager.isTempMode(context)
+
+                                        // About Us — always visible
+                                        DropdownMenuItem(
+                                            text = { Text("About Us") },
+                                            onClick = { 
+                                                nav.navigate("about")
+                                                showMenu = false
+                                            },
+                                            leadingIcon = {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .border(
+                                                            width = 2.dp,
+                                                            color = LocalContentColor.current,
+                                                            shape = CircleShape
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = "i",
+                                                        style = MaterialTheme.typography.labelLarge.copy(
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    )
                                                 }
                                             }
-                                        } catch (e: Exception) {
-                                            timber.log.Timber.e(e, "AlbumsScreen: Error signing out")
+                                        )
+
+                                        if (isTempMode) {
+                                            // Temp Mode: Back to Primary
+                                            DropdownMenuItem(
+                                                text = { Text("Back to Primary Mode") },
+                                                onClick = {
+                                                    showMenu = false
+                                                    TempModeManager.exitTempMode(context)
+                                                    nav.navigate("albums") {
+                                                        popUpTo(0) { inclusive = true }
+                                                    }
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        painter = painterResource(android.R.drawable.ic_menu_revert),
+                                                        contentDescription = "Back to Primary Mode"
+                                                    )
+                                                }
+                                            )
+                                        } else {
+                                            // Primary Mode items
+                                            DropdownMenuItem(
+                                                text = { Text("Restore Sync") },
+                                                onClick = { 
+                                                    nav.navigate("restore_sync")
+                                                    showMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        painter = painterResource(R.drawable.ic_cloud_sync),
+                                                        contentDescription = "Restore Sync"
+                                                    )
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Force Backup") },
+                                                onClick = { 
+                                                    nav.navigate("backup")
+                                                    showMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        painter = painterResource(android.R.drawable.ic_menu_save),
+                                                        contentDescription = "Force Backup"
+                                                    )
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Temp Mode") },
+                                                onClick = {
+                                                    showMenu = false
+                                                    TempModeManager.enterTempMode(context)
+                                                    nav.navigate("albums") {
+                                                        popUpTo(0) { inclusive = true }
+                                                    }
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        painter = painterResource(android.R.drawable.ic_menu_recent_history),
+                                                        contentDescription = "Temp Mode"
+                                                    )
+                                                }
+                                            )
                                         }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            painter = painterResource(android.R.drawable.ic_menu_revert),
-                                            contentDescription = "Sign Out"
+
+                                        // Sign Out — always visible
+                                        DropdownMenuItem(
+                                            text = { Text("Sign Out") },
+                                            onClick = { 
+                                                showMenu = false
+                                                try {
+                                                    if (isTempMode) TempModeManager.exitTempMode(context)
+                                                    Modules.resetForAccountChange()
+                                                    AccountScopeManager.clearActiveAccount(context)
+                                                    AuthManager.signOut(context) {
+                                                        nav.navigate("signin") {
+                                                            popUpTo(0) { inclusive = true }
+                                                        }
+                                                    }
+                                                } catch (e: Exception) {
+                                                    timber.log.Timber.e(e, "AlbumsScreen: Error signing out")
+                                                }
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    painter = painterResource(android.R.drawable.ic_menu_revert),
+                                                    contentDescription = "Sign Out"
+                                                )
+                                            }
                                         )
                                     }
-                                )
+                                }
                             }
                         }
                     }
@@ -427,6 +747,25 @@ fun AlbumsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(12.dp)
         ) {
+            // Temp Mode banner — content auto-deletes in 7 days
+            if (TempModeManager.isTempMode(context)) {
+                item {
+                    Text(
+                        text = "Content in Temp Mode will auto-delete after 7 days.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+
             // 1) HomeSections (Recent Search, Favorites, Recents)
             item {
                 HomeSections(nav = nav)
@@ -542,6 +881,35 @@ fun AlbumsScreen(
     }
 
 
+    // Progress dialog for copy/move operations
+    if (showProgressDialog) {
+        AlertDialog(
+            onDismissRequest = { /* Don't allow dismissing during operation */ },
+            title = { Text("Processing...") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = progressMessage,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (progressTotal > 0) {
+                        Text(
+                            text = "$progressCurrent / $progressTotal",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+    
     // New album name dialog for camera
     if (showNewAlbumDialog) {
         AlertDialog(
@@ -564,20 +932,7 @@ fun AlbumsScreen(
                             showNewAlbumDialog = false
                             newAlbumName = ""
                             if (id > 0) {
-                                // Stay on home screen and highlight the new album
-                                highlightedAlbumId = id
-                                
-                                // Auto-scroll to show the new album
-                                delay(100) // Allow list to update
-                                val albumIndex = safeAlbums.indexOfFirst { it.id == id }
-                                if (albumIndex >= 0) {
-                                    // Scroll to item (index 2 is the albums section in LazyColumn)
-                                    listState.animateScrollToItem(2)
-                                }
-                                
-                                // Clear highlight after 2 seconds
-                                delay(2000)
-                                highlightedAlbumId = null
+                                nav.navigate("album/$id")
                             }
                         }
                     }
@@ -739,6 +1094,7 @@ private fun AlbumsGrid(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AlbumCard(
     album: AlbumEntity?,
@@ -770,13 +1126,6 @@ private fun AlbumCard(
     )
     
     Card(
-        onClick = {
-            try {
-                onClick()
-            } catch (e: Exception) {
-                // Handle any errors gracefully
-            }
-        },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.LightGray),
         modifier = modifier
@@ -786,17 +1135,22 @@ private fun AlbumCard(
                 color = glowColor,
                 shape = RoundedCornerShape(12.dp)
             )
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onLongPress = { 
-                        try {
-                            onLongPress()
-                        } catch (e: Exception) {
-                            // Handle any errors gracefully
-                        }
+            .combinedClickable(
+                onClick = {
+                    try {
+                        onClick()
+                    } catch (e: Exception) {
+                        // Handle any errors gracefully
                     }
-                )
-            }
+                },
+                onLongClick = {
+                    try {
+                        onLongPress()
+                    } catch (e: Exception) {
+                        // Handle any errors gracefully
+                    }
+                }
+            )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             // Cover image box with favorite star overlay
@@ -881,7 +1235,7 @@ private fun AlbumCard(
                             else android.R.drawable.btn_star_big_off
                         ),
                         contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
-                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (isFavorite) FavoriteStarColor else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 

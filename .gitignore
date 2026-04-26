@@ -82,6 +82,15 @@ lint/tmp/
 
 # Google Drive API credentials
 client_secret_*.json
+client_secret*.json
+app/client_secret.json
+
+# Recovery / extracted artifacts (never commit)
+imported_recovery_v1/
+
+# Credential material
+*.pem
+*.p12
 
 # TestSprite reports
 testsprite_tests/

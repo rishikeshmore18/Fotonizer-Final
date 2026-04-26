@@ -2,6 +2,7 @@ package com.example.photoapp10.feature.backup.domain
 
 import android.content.Context
 import com.example.photoapp10.core.di.Modules
+import com.example.photoapp10.core.util.MediaFileSupport
 import com.example.photoapp10.feature.backup.drive.DriveAppData
 import com.example.photoapp10.feature.album.data.AlbumEntity
 import com.example.photoapp10.feature.photo.data.PhotoEntity
@@ -81,7 +82,8 @@ class DriveRestore(
                                 photoCount = ba.photoCount, 
                                 favorite = ba.favorite,
                                 emoji = ba.emoji,
-                                updatedAt = ba.updatedAt
+                                updatedAt = ba.updatedAt,
+                                parentId = ba.parentId
                             )
                         )
                         aIns++
@@ -93,7 +95,8 @@ class DriveRestore(
                             photoCount = ba.photoCount, 
                             favorite = ba.favorite,
                             emoji = ba.emoji,
-                            updatedAt = ba.updatedAt
+                            updatedAt = ba.updatedAt,
+                            parentId = ba.parentId
                         ))
                         aUpd++
                         Timber.d("DriveRestore: Updated album '${ba.name}' (${ba.id})")
@@ -119,6 +122,8 @@ class DriveRestore(
             root.photos.forEachIndexed { index, bp ->
                 try {
                     val existing = photoDao.getById(bp.id)
+                    val fileExtension = MediaFileSupport.normalizedExtension(bp.filename)
+                    val isVideo = MediaFileSupport.isVideoExtension(fileExtension)
                     
                     // Smart restore: Skip if already backed up and up to date
                     if (existing != null && 
@@ -129,10 +134,10 @@ class DriveRestore(
                         return@forEachIndexed
                     }
                     
-                    val dst = storage.photoFile(bp.albumId, bp.id)
+                    val dst = storage.photoFile(bp.albumId, bp.id, fileExtension)
                     
-                    // Download the actual photo file from Drive
-                    val photoDownloaded = downloadPhotoFile(bp.albumId, bp.id, dst)
+                    // Download the actual photo/video file from Drive
+                    val photoDownloaded = downloadPhotoFile(bp, dst)
                     if (!photoDownloaded) {
                         missing++
                         Timber.w("DriveRestore: missing remote file for photo ${bp.id}")
@@ -142,16 +147,9 @@ class DriveRestore(
                     } else {
                         downloadedOk++
                         Timber.d("DriveRestore: Successfully downloaded photo file: ${dst.absolutePath}")
-                        
-                        // Immediately regenerate thumbnail after successful download
-                        try {
-                            val thumbFile = storage.thumbFile(bp.albumId, bp.id)
-                            val thumbResult = thumbnailer.generate(dst, thumbFile)
-                            Timber.d("DriveRestore: Generated thumbnail for photo ${bp.id}: ${thumbResult.path}")
-                        } catch (e: Exception) {
-                            Timber.e(e, "DriveRestore: Error generating thumbnail for photo ${bp.id}")
-                        }
                     }
+
+                    val restoredThumbPath = generateThumbnailForRestoredMedia(bp, dst, isVideo)
                     
                     if (existing == null) {
                         photoDao.upsert(
@@ -160,10 +158,10 @@ class DriveRestore(
                                 albumId = bp.albumId,
                                 filename = bp.filename,
                                 path = dst.absolutePath, // Now points to downloaded file
-                                thumbPath = storage.thumbFile(bp.albumId, bp.id).absolutePath, // Thumbnail path
+                                thumbPath = restoredThumbPath,
                                 width = bp.width,
                                 height = bp.height,
-                                sizeBytes = bp.sizeBytes,
+                                sizeBytes = dst.length(),
                                 caption = bp.caption,
                                 tags = bp.tags,
                                 favorite = bp.favorite,
@@ -179,10 +177,10 @@ class DriveRestore(
                             albumId = bp.albumId,
                             filename = bp.filename,
                             path = dst.absolutePath, // Now points to downloaded file
-                            thumbPath = storage.thumbFile(bp.albumId, bp.id).absolutePath, // Thumbnail path
+                            thumbPath = restoredThumbPath.ifBlank { existing.thumbPath },
                             width = bp.width,
                             height = bp.height,
-                            sizeBytes = bp.sizeBytes,
+                            sizeBytes = dst.length(),
                             caption = bp.caption,
                             tags = bp.tags,
                             favorite = bp.favorite,
@@ -241,41 +239,75 @@ class DriveRestore(
         }
     }
 
-    /** Download a photo file from Drive appDataFolder to local storage */
-    private suspend fun downloadPhotoFile(albumId: Long, photoId: Long, dst: File): Boolean = withContext(Dispatchers.IO) {
-        try {
-            Timber.d("DriveRestore: Looking for photo file in Drive: photos/$albumId/$photoId.jpg")
-            
-            // Search for the photo file in Drive appDataFolder
-            val listRequest = drive.drive.files().list()
-                .setSpaces("appDataFolder")
-                .setQ("name = 'photos/$albumId/$photoId.jpg' and trashed = false")
-                .setFields("files(id,name)")
-                .setPageSize(1)
-
-            val fileList = listRequest.execute()
-            val files = fileList.files
-
-            if (files.isNullOrEmpty()) {
-                Timber.w("DriveRestore: Photo file not found in Drive: photos/$albumId/$photoId.jpg")
-                return@withContext false
-            }
-
-            val driveFile = files[0]
-            Timber.d("DriveRestore: Found photo file in Drive: ${driveFile.name} (${driveFile.id})")
-
-            // Download the file
-            val success = drive.download(driveFile.id, dst)
-            if (success && dst.exists()) {
-                Timber.d("DriveRestore: Successfully downloaded photo: ${dst.absolutePath} (${dst.length()} bytes)")
-                return@withContext true
+    private suspend fun generateThumbnailForRestoredMedia(
+        photo: BackupPhoto,
+        sourceFile: File,
+        isVideo: Boolean
+    ): String {
+        return try {
+            val thumbFile = storage.thumbFile(photo.albumId, photo.id)
+            val thumbResult = if (isVideo) {
+                thumbnailer.generateVideoThumbnail(sourceFile, thumbFile)
             } else {
-                Timber.e("DriveRestore: Failed to download photo file or file doesn't exist after download")
-                return@withContext false
+                thumbnailer.generate(sourceFile, thumbFile)
             }
+            Timber.d("DriveRestore: Generated thumbnail for photo ${photo.id}: ${thumbResult.path}")
+            thumbResult.path
+        } catch (e: Exception) {
+            Timber.e(e, "DriveRestore: Error generating thumbnail for photo ${photo.id}")
+            ""
+        }
+    }
+
+    /** Download a photo/video file from Drive appDataFolder to local storage */
+    private suspend fun downloadPhotoFile(photo: BackupPhoto, dst: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val fileExtension = MediaFileSupport.normalizedExtension(photo.filename)
+            val isVideo = MediaFileSupport.isVideoExtension(fileExtension)
+            val timeoutMs = if (isVideo) {
+                MediaFileSupport.VIDEO_TRANSFER_TIMEOUT_MS
+            } else {
+                MediaFileSupport.PHOTO_TRANSFER_TIMEOUT_MS
+            }
+            val candidatePaths = linkedSetOf(
+                MediaFileSupport.relativeMediaPath(photo.albumId, photo.id, fileExtension),
+                photo.relativePath,
+                MediaFileSupport.relativeMediaPath(photo.albumId, photo.id, "jpg")
+            ).filter { it.isNotBlank() }
+
+            for (remotePath in candidatePaths) {
+                Timber.d("DriveRestore: Looking for media file in Drive: $remotePath")
+
+                val listRequest = drive.drive.files().list()
+                    .setSpaces("appDataFolder")
+                    .setQ("name = '$remotePath' and trashed = false")
+                    .setFields("files(id,name)")
+                    .setPageSize(1)
+
+                val fileList = listRequest.execute()
+                val files = fileList.files
+
+                if (files.isNullOrEmpty()) {
+                    continue
+                }
+
+                val driveFile = files[0]
+                Timber.d("DriveRestore: Found media file in Drive: ${driveFile.name} (${driveFile.id})")
+
+                val success = drive.download(driveFile.id, dst, timeoutMs)
+                if (success && dst.exists()) {
+                    Timber.d("DriveRestore: Successfully downloaded photo: ${dst.absolutePath} (${dst.length()} bytes)")
+                    return@withContext true
+                }
+
+                Timber.e("DriveRestore: Failed to download media file from path: $remotePath")
+            }
+
+            Timber.w("DriveRestore: Media file not found in Drive for photo ${photo.id}")
+            return@withContext false
 
         } catch (e: Exception) {
-            Timber.e(e, "DriveRestore: Error downloading photo file for album $albumId, photo $photoId")
+            Timber.e(e, "DriveRestore: Error downloading photo file for album ${photo.albumId}, photo ${photo.id}")
             return@withContext false
         }
     }

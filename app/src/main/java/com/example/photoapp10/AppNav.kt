@@ -20,6 +20,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.photoapp10.core.account.AccountScopeManager
+import com.example.photoapp10.core.account.TempModeManager
 import com.example.photoapp10.core.di.Modules
 import com.example.photoapp10.feature.album.ui.AlbumsScreen
 import com.example.photoapp10.feature.album.ui.AlbumDetailScreen
@@ -32,6 +34,7 @@ import com.example.photoapp10.feature.photo.ui.CameraScreen
 import com.example.photoapp10.feature.photo.ui.PhotoDetailScreen
 import com.example.photoapp10.feature.search.ui.SearchScreen
 import com.example.photoapp10.feature.settings.ui.SettingsScreen
+import com.example.photoapp10.feature.settings.ui.AboutScreen
 import timber.log.Timber
 
 @Composable
@@ -40,7 +43,25 @@ fun AppNav(
 ) {
     val context = LocalContext.current
     val userPrefs = remember { Modules.provideUserPrefs(context) }
-    
+
+    // Ensure account scope is set for already-authenticated users on app start.
+    // Skip when in temp mode — temp mode manages its own namespace.
+    remember {
+        if (TempModeManager.isTempMode(context)) {
+            TempModeManager.ensureTempModeScope(context)
+        } else {
+            val account = AuthManager.getLastAccount(context)
+            if (account != null) {
+                val accountId = account.id ?: account.email ?: "default"
+                if (AccountScopeManager.getActiveAccountId(context) != accountId) {
+                    AccountScopeManager.migrateDefaultDataIfNeeded(context, accountId)
+                    AccountScopeManager.setActiveAccount(context, accountId)
+                }
+            }
+        }
+        true
+    }
+
     // Collect preferences state without blocking UI
     val rememberDevice by userPrefs.rememberDeviceFlow(context).collectAsState(initial = true)
     val restoreGateShown by userPrefs.restoreGateShownFlow(context).collectAsState(initial = false)
@@ -141,6 +162,17 @@ fun AppNav(
             val albumId = backStackEntry.arguments?.getLong("albumId") ?: 0L
             SearchScreen(navController, albumId = albumId)
         }
+        composable(
+            route = "search/{albumId}/query/{query}",
+            arguments = listOf(
+                navArgument("albumId") { type = NavType.LongType },
+                navArgument("query") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val albumId = backStackEntry.arguments?.getLong("albumId") ?: 0L
+            val query = backStackEntry.arguments?.getString("query") ?: ""
+            SearchScreen(navController, albumId = albumId, initialQuery = query)
+        }
         composable("backup") {
             Timber.i("AppNav: Navigating to SimpleBackupScreen")
             SimpleBackupScreen()
@@ -152,6 +184,8 @@ fun AppNav(
         composable("settings") {
             SettingsScreen(navController)
         }
+        composable("about") {
+            AboutScreen(navController)
+        }
     }
 }
-

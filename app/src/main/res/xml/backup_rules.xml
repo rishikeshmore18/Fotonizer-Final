@@ -6,7 +6,4 @@
     <exclude domain="file" path="crash_reports/"/>
     <exclude domain="file" path="photos/"/>
     <exclude domain="file" path="thumbs/"/>
-    
-    <!-- Include only app preferences -->
-    <include domain="sharedpref" path="app_preferences.xml"/>
 </full-backup-content>

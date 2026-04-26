@@ -27,7 +27,9 @@ data class ArchiveAlbum(
     val photoCount: Int,
     val favorite: Boolean,
     val archivedAt: Long,
-    val originalUpdatedAt: Long
+    val originalUpdatedAt: Long,
+    /** Parent album ID for nested folders. null = root level album */
+    val parentId: Long? = null
 )
 
 /**

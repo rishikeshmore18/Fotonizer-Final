@@ -9,3 +9,4 @@ val Seed = Color(0xFF3F51B5) // Indigo 500 as a pleasant default
 val Success = Color(0xFF2E7D32)
 val Warning = Color(0xFFF9A825)
 val Danger  = Color(0xFFC62828)
+val FavoriteStarColor = Color(0xFFFFC107)

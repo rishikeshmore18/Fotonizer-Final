@@ -2,6 +2,7 @@ package com.example.photoapp10.core.thumb
 
 import android.graphics.*
 import android.media.ThumbnailUtils
+import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -141,6 +142,54 @@ class Thumbnailer {
         } catch (e: Exception) {
             Timber.e(e, "Error rotating bitmap")
             src // return original if rotate fails
+        }
+    }
+
+    /**
+     * Generate thumbnail for video file.
+     * Uses MediaStore.Images.Thumbnails or ThumbnailUtils.createVideoThumbnail.
+     */
+    suspend fun generateVideoThumbnail(
+        videoFile: File,
+        destFile: File,
+        maxDim: Int = 512,
+        jpegQuality: Int = 85
+    ): ThumbnailResult = withContext(Dispatchers.IO) {
+        try {
+            // Use ThumbnailUtils to create video thumbnail
+            val thumbnail: Bitmap? = ThumbnailUtils.createVideoThumbnail(
+                videoFile.absolutePath,
+                MediaStore.Images.Thumbnails.MINI_KIND
+            )
+            
+            if (thumbnail == null) {
+                Timber.e("Failed to create video thumbnail for: ${videoFile.absolutePath}")
+                error("Failed to create video thumbnail")
+            }
+
+            try {
+                // Scale to maxDim (long side)
+                val (tw, th) = targetSize(thumbnail.width, thumbnail.height, maxDim)
+                val scaled = if (thumbnail.width != tw || thumbnail.height != th) {
+                    ThumbnailUtils.extractThumbnail(thumbnail, tw, th, ThumbnailUtils.OPTIONS_RECYCLE_INPUT)
+                } else thumbnail
+
+                // Compress to JPEG
+                destFile.parentFile?.mkdirs()
+                FileOutputStream(destFile).use { fos ->
+                    if (!scaled.compress(Bitmap.CompressFormat.JPEG, jpegQuality, fos)) {
+                        error("JPEG compression failed for video thumbnail")
+                    }
+                }
+
+                ThumbnailResult(destFile.absolutePath, scaled.width, scaled.height)
+            } finally {
+                // Recycle bitmaps
+                if (!thumbnail.isRecycled) thumbnail.recycle()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error generating video thumbnail for: ${videoFile.absolutePath}")
+            throw e
         }
     }
 }

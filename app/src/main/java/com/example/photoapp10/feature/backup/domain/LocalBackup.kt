@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.example.photoapp10.core.db.AppDb
 import com.example.photoapp10.core.file.AppStorage
+import com.example.photoapp10.core.util.MediaFileSupport
 import com.example.photoapp10.feature.album.data.AlbumEntity
 import com.example.photoapp10.feature.photo.data.PhotoEntity
 import com.example.photoapp10.feature.settings.data.UserPrefs
@@ -55,6 +56,7 @@ class LocalBackup(
                 albumIds.flatMap { id ->
                     getAllInAlbum(id)
                 }.map { p ->
+                    val fileExtension = MediaFileSupport.normalizedExtension(p.filename)
                     Timber.d("Found photo in DB: id=${p.id}, path='${p.path}', thumbPath='${p.thumbPath}', filename='${p.filename}'")
                     BackupPhoto(
                         id = p.id,
@@ -71,7 +73,7 @@ class LocalBackup(
                         updatedAt = p.updatedAt,
                         path = p.path,
                         thumbPath = p.thumbPath,
-                        relativePath = "photos/${p.albumId}/${p.id}.jpg"
+                        relativePath = MediaFileSupport.relativeMediaPath(p.albumId, p.id, fileExtension)
                     )
                 }
             }
@@ -102,13 +104,20 @@ class LocalBackup(
             var copied = 0
             var missing = 0
             photos.forEach { bp ->
+                val fileExtension = MediaFileSupport.normalizedExtension(bp.filename)
                 // Use the actual path from PhotoEntity
                 val src = File(bp.path)
                 Timber.d("Exporting photo: ${bp.id}, src=${src.absolutePath}, exists=${src.exists()}")
                 
                 val dstParent = ensureDir(photosDir, bp.albumId.toString())
                 if (src.exists()) {
-                    copyIfExists(cr, src, dstParent, "${bp.id}.jpg")?.let { copied++ } ?: run { missing++ }
+                    copyIfExists(
+                        cr,
+                        src,
+                        dstParent,
+                        MediaFileSupport.backupMediaFileName(bp.id, fileExtension),
+                        MediaFileSupport.mimeTypeForExtension(fileExtension)
+                    )?.let { copied++ } ?: run { missing++ }
                 } else {
                     Timber.w("Photo file does not exist: ${src.absolutePath}")
                     missing++
@@ -120,7 +129,7 @@ class LocalBackup(
                 
                 val dstThumbParent = ensureDir(thumbsDir, bp.albumId.toString())
                 if (thumb.exists()) {
-                    copyIfExists(cr, thumb, dstThumbParent, "${bp.id}.jpg")
+                    copyIfExists(cr, thumb, dstThumbParent, "${bp.id}.jpg", "image/jpeg")
                 } else {
                     Timber.w("Thumbnail file does not exist: ${thumb.absolutePath}")
                 }
@@ -147,14 +156,15 @@ class LocalBackup(
         cr: ContentResolver,
         src: File,
         dstDir: DocumentFile,
-        dstName: String
+        dstName: String,
+        mimeType: String
     ): Uri? {
         if (!src.exists()) {
             Timber.w("Source file does not exist: ${src.absolutePath}")
             return null
         }
         
-        val dst = dstDir.createFile("image/jpeg", dstName) ?: run {
+        val dst = dstDir.createFile(mimeType, dstName) ?: run {
             Timber.e("Failed to create destination file: $dstName")
             return null
         }
@@ -263,10 +273,16 @@ class LocalBackup(
             Timber.d("Import: media dir exists=${media != null}, photos dir exists=${photosDir != null}")
 
             root.photos.forEach { bp ->
+                val fileExtension = MediaFileSupport.normalizedExtension(bp.filename)
                 // copy original file back into app-private storage
                 val albumDir = photosDir?.findFile(bp.albumId.toString())
-                val srcDoc = albumDir?.findFile("${bp.id}.jpg")
-                val dst = storage.photoFile(bp.albumId, bp.id)
+                val srcDoc = sequenceOf(
+                    MediaFileSupport.backupMediaFileName(bp.id, fileExtension),
+                    MediaFileSupport.backupMediaFileName(bp.id, "jpg")
+                ).mapNotNull { fileName ->
+                    albumDir?.findFile(fileName)?.takeIf { it.exists() }
+                }.firstOrNull()
+                val dst = storage.photoFile(bp.albumId, bp.id, fileExtension)
                 var filePresent = false
                 
                 Timber.d("Importing photo: ${bp.id}, albumDir exists=${albumDir != null}, srcDoc exists=${srcDoc?.exists()}")

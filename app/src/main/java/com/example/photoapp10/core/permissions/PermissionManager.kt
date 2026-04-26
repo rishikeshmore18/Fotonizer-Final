@@ -18,6 +18,7 @@ class PermissionManager(private val context: Context) {
         
         private val REQUIRED_PERMISSIONS = arrayOf(
             Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO, // For video recording
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
         )
@@ -81,6 +82,16 @@ class PermissionManager(private val context: Context) {
     }
 
     /**
+     * Check if microphone permission is granted
+     */
+    fun isMicrophonePermissionGranted(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
      * Request all required permissions
      */
     fun requestAllPermissions(activity: Activity) {
@@ -89,6 +100,11 @@ class PermissionManager(private val context: Context) {
         // Add camera permission if not granted
         if (!isCameraPermissionGranted()) {
             permissionsToRequest.add(Manifest.permission.CAMERA)
+        }
+        
+        // Add microphone permission for video recording
+        if (!isMicrophonePermissionGranted()) {
+            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
         }
         
         // Add storage permissions if not granted (for older Android versions)

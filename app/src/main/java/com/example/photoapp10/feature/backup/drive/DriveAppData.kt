@@ -9,6 +9,7 @@ import com.google.api.services.drive.model.FileList
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
@@ -20,19 +21,25 @@ class DriveAppData(private val context: Context, val drive: Drive) {
 
     data class BackupFile(val id: String, val name: String, val modifiedTimeMillis: Long)
 
-    private suspend fun executeWithRetry(operation: suspend (Drive) -> Unit): Boolean {
+    private suspend fun executeWithRetry(
+        timeoutMs: Long = API_TIMEOUT_MS,
+        operation: suspend (Drive) -> Unit
+    ): Boolean {
         return try {
-            withTimeout(API_TIMEOUT_MS) {
+            withTimeout(timeoutMs) {
                 operation(drive)
             }
             true
         } catch (e: Exception) {
-            if (e.message?.contains("401") == true || e.message?.contains("Unauthorized") == true) {
+            if (e is TimeoutCancellationException) {
+                Log.w("DriveAppData", "Operation timed out after ${timeoutMs}ms")
+                false
+            } else if (e.message?.contains("401") == true || e.message?.contains("Unauthorized") == true) {
                 Log.w("DriveAppData", "Authentication error, attempting to refresh token")
                 val refreshedDrive = AuthManager.refreshDriveService(context, drive)
                 if (refreshedDrive != null) {
                     try {
-                        withTimeout(API_TIMEOUT_MS) {
+                        withTimeout(timeoutMs) {
                             operation(refreshedDrive)
                         }
                         true
@@ -94,16 +101,16 @@ class DriveAppData(private val context: Context, val drive: Drive) {
         }
     }
 
-    suspend fun download(fileId: String, dst: File): Boolean = withContext(Dispatchers.IO) {
+    suspend fun download(fileId: String, dst: File, timeoutMs: Long = API_TIMEOUT_MS): Boolean = withContext(Dispatchers.IO) {
         try {
             Log.d("DriveAppData", "Downloading file $fileId to ${dst.absolutePath} via Drive client")
 
-            val success = executeWithRetry { drive ->
+            val success = executeWithRetry(timeoutMs) { drive ->
                 dst.parentFile?.mkdirs()
-                
-                val outputStream = FileOutputStream(dst)
-                drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
-                outputStream.close()
+
+                FileOutputStream(dst).use { outputStream ->
+                    drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
+                }
 
                 Log.d("DriveAppData", "Successfully downloaded file: ${dst.length()} bytes")
             }

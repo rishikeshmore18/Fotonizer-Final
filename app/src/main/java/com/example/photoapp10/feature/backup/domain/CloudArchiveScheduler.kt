@@ -2,6 +2,7 @@ package com.example.photoapp10.feature.backup.domain
 
 import android.content.Context
 import androidx.work.*
+import com.example.photoapp10.feature.settings.data.UserPrefs
 import com.example.photoapp10.feature.backup.work.CloudArchiveWorker
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
@@ -20,9 +21,15 @@ class CloudArchiveScheduler(private val context: Context) {
     fun scheduleDailyArchive() {
         try {
             Timber.i("CloudArchiveScheduler: Scheduling daily cloud archive at 11 PM")
+            val wifiOnly = try {
+                UserPrefs(context).wifiOnlyFlowReplay()
+            } catch (e: Exception) {
+                Timber.w(e, "CloudArchiveScheduler: Failed to read wifiOnly preference, defaulting to true")
+                true
+            }
             
             val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
                 .setRequiresBatteryNotLow(true)
                 .build()
 

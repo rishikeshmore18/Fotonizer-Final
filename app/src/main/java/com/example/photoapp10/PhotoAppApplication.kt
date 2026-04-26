@@ -1,6 +1,7 @@
 package com.example.photoapp10
 
 import android.app.Application
+import com.rishikeshmore.fotonizer.BuildConfig
 import timber.log.Timber
 
 /**

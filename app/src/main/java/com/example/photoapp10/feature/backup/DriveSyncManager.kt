@@ -35,7 +35,7 @@ class DriveSyncManager(private val app: Application) {
             lastSyncRequestTime = currentTime
             Timber.d("DriveSyncManager: Sync requested - reason: $reason")
             
-            // Light debounce by replacing any existing work:
+            // Queue sync work behind any active worker instead of cancelling in-flight uploads.
             val prefs = UserPrefs(app)
             val wifiOnly = try {
                 prefs.wifiOnlyFlowReplay()
@@ -59,7 +59,7 @@ class DriveSyncManager(private val app: Application) {
 
             WorkManager.getInstance(app).enqueueUniqueWork(
                 UNIQUE_NAME,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 work
             )
             

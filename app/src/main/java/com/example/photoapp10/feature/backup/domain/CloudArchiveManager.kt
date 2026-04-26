@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.photoapp10.core.db.AppDb
 import com.example.photoapp10.core.file.AppStorage
 import com.example.photoapp10.core.thumb.Thumbnailer
+import com.example.photoapp10.core.util.MediaFileSupport
 import com.example.photoapp10.feature.album.data.AlbumEntity
 import com.example.photoapp10.feature.backup.drive.driveAppDataOrNull
 import com.example.photoapp10.feature.backup.drive.DriveAppData
@@ -93,20 +94,31 @@ class CloudArchiveManager(
             val uploader = DriveUploader(driveAppData.drive)
             var photosArchived = 0
             var photosSkipped = 0
+            val newlyArchivedPhotos = mutableListOf<ArchivePhoto>()
 
             newPhotos.forEach { photo ->
                 try {
-                    val file = storage.photoFile(photo.albumId, photo.id)
+                    val fileExtension = MediaFileSupport.normalizedExtension(photo.filename)
+                    val isVideo = MediaFileSupport.isVideoExtension(fileExtension)
+                    
+                    val file = storage.photoFile(photo.albumId, photo.id, fileExtension)
                     if (file.exists()) {
-                        val archivePath = "$ARCHIVE_FOLDER/$ARCHIVE_PHOTOS/${photo.albumId}/${photo.id}.jpg"
-                        val success = uploader.putPhotoToPath(file, archivePath)
+                        val archivePath = "$ARCHIVE_FOLDER/${MediaFileSupport.relativeMediaPath(photo.albumId, photo.id, fileExtension)}"
+                        val mimeType = MediaFileSupport.mimeTypeForExtension(fileExtension)
+                        val timeoutMs = if (isVideo) {
+                            MediaFileSupport.VIDEO_TRANSFER_TIMEOUT_MS
+                        } else {
+                            MediaFileSupport.PHOTO_TRANSFER_TIMEOUT_MS
+                        }
+                        val success = uploader.putFileToPath(file, archivePath, mimeType, timeoutMs)
                         if (success) {
                             photosArchived++
+                            newlyArchivedPhotos += photo.toArchivePhoto(fileExtension)
                         } else {
                             photosSkipped++
                         }
                     } else {
-                        Timber.w("Photo file not found: ${file.absolutePath}")
+                        Timber.w("Photo/video file not found: ${file.absolutePath}")
                         photosSkipped++
                     }
                 } catch (e: Exception) {
@@ -119,7 +131,7 @@ class CloudArchiveManager(
             val archivedAlbums = (existingArchive?.archivedAlbums ?: emptyList()) + 
                 newAlbums.map { it.toArchiveAlbum() }
             val archivedPhotos = (existingArchive?.archivedPhotos ?: emptyList()) + 
-                newPhotos.map { it.toArchivePhoto() }
+                newlyArchivedPhotos
 
             val archiveRoot = ArchiveRoot(
                 createdAt = existingArchive?.createdAt ?: System.currentTimeMillis(),
@@ -227,7 +239,8 @@ class CloudArchiveManager(
                             emoji = archiveAlbum.emoji,
                             photoCount = archiveAlbum.photoCount,
                             favorite = archiveAlbum.favorite,
-                            updatedAt = archiveAlbum.originalUpdatedAt
+                            updatedAt = archiveAlbum.originalUpdatedAt,
+                            parentId = archiveAlbum.parentId
                         )
                     )
                     albumsRestored++
@@ -240,35 +253,62 @@ class CloudArchiveManager(
             val photoDao = db.photoDao()
             photosToRestore.forEach { archivePhoto ->
                 try {
-                    // Download photo file from archive
-                    val archivePath = "$ARCHIVE_FOLDER/$ARCHIVE_PHOTOS/${archivePhoto.albumId}/${archivePhoto.id}.jpg"
-                    val localFile = storage.photoFile(archivePhoto.albumId, archivePhoto.id)
+                    // Extract file extension from filename
+                    val fileExtension = MediaFileSupport.normalizedExtension(archivePhoto.filename)
+                    val isVideo = MediaFileSupport.isVideoExtension(fileExtension)
+                    
+                    // Download photo/video file from archive
+                    val archivePath = "$ARCHIVE_FOLDER/${MediaFileSupport.relativeMediaPath(archivePhoto.albumId, archivePhoto.id, fileExtension)}"
+                    val localFile = storage.photoFile(archivePhoto.albumId, archivePhoto.id, fileExtension)
                     
                     val downloaded = downloadPhotoFromArchive(driveAppData, archivePath, localFile)
                     if (downloaded) {
-                        // Generate thumbnail
-                        val thumbFile = storage.thumbFile(archivePhoto.albumId, archivePhoto.id)
-                        thumbnailer.generate(localFile, thumbFile)
-                        
-                        // Insert photo record
-                        photoDao.upsert(
-                            PhotoEntity(
-                                id = archivePhoto.id,
-                                albumId = archivePhoto.albumId,
-                                filename = archivePhoto.filename,
-                                path = localFile.absolutePath,
-                                thumbPath = thumbFile.absolutePath,
-                                width = archivePhoto.width,
-                                height = archivePhoto.height,
-                                sizeBytes = archivePhoto.sizeBytes,
-                                caption = archivePhoto.caption,
-                                tags = archivePhoto.tags,
-                                favorite = archivePhoto.favorite,
-                                takenAt = archivePhoto.takenAt,
-                                createdAt = archivePhoto.createdAt,
-                                updatedAt = archivePhoto.originalUpdatedAt
+                        if (isVideo) {
+                            // For videos, skip thumbnail generation (or implement video frame extraction later)
+                            Timber.d("Video restored, skipping thumbnail generation")
+                            photoDao.upsert(
+                                PhotoEntity(
+                                    id = archivePhoto.id,
+                                    albumId = archivePhoto.albumId,
+                                    filename = archivePhoto.filename,
+                                    path = localFile.absolutePath,
+                                    thumbPath = "", // No thumbnail for videos
+                                    width = archivePhoto.width,
+                                    height = archivePhoto.height,
+                                    sizeBytes = localFile.length(),
+                                    caption = archivePhoto.caption,
+                                    tags = archivePhoto.tags,
+                                    favorite = archivePhoto.favorite,
+                                    takenAt = archivePhoto.takenAt,
+                                    createdAt = archivePhoto.createdAt,
+                                    updatedAt = archivePhoto.originalUpdatedAt
+                                )
                             )
-                        )
+                        } else {
+                            // For photos, generate thumbnail
+                            val thumbFile = storage.thumbFile(archivePhoto.albumId, archivePhoto.id)
+                            thumbnailer.generate(localFile, thumbFile)
+                            
+                            // Insert photo record
+                            photoDao.upsert(
+                                PhotoEntity(
+                                    id = archivePhoto.id,
+                                    albumId = archivePhoto.albumId,
+                                    filename = archivePhoto.filename,
+                                    path = localFile.absolutePath,
+                                    thumbPath = thumbFile.absolutePath,
+                                    width = archivePhoto.width,
+                                    height = archivePhoto.height,
+                                    sizeBytes = localFile.length(),
+                                    caption = archivePhoto.caption,
+                                    tags = archivePhoto.tags,
+                                    favorite = archivePhoto.favorite,
+                                    takenAt = archivePhoto.takenAt,
+                                    createdAt = archivePhoto.createdAt,
+                                    updatedAt = archivePhoto.originalUpdatedAt
+                                )
+                            )
+                        }
                         photosRestored++
                     } else {
                         photosSkipped++
@@ -408,10 +448,11 @@ class CloudArchiveManager(
         photoCount = photoCount,
         favorite = favorite,
         archivedAt = System.currentTimeMillis(),
-        originalUpdatedAt = updatedAt
+        originalUpdatedAt = updatedAt,
+        parentId = parentId
     )
 
-    private fun PhotoEntity.toArchivePhoto() = ArchivePhoto(
+    private fun PhotoEntity.toArchivePhoto(fileExtension: String = MediaFileSupport.normalizedExtension(filename)) = ArchivePhoto(
         id = id,
         albumId = albumId,
         filename = filename,
@@ -425,6 +466,6 @@ class CloudArchiveManager(
         createdAt = createdAt,
         originalUpdatedAt = updatedAt,
         archivedAt = System.currentTimeMillis(),
-        relativePath = "photos/$albumId/$id.jpg"
+        relativePath = MediaFileSupport.relativeMediaPath(albumId, id, fileExtension)
     )
 }

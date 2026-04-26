@@ -20,7 +20,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     
     private val albumRepo: AlbumRepository = Modules.provideAlbumRepository(app)
     private val photoRepo: PhotoRepository = Modules.providePhotoRepository(app)
-    private val storage = AppStorage(app)
+    private val storage = Modules.provideStorage(app)
     
     // Camera state
     private val _isFlashEnabled = MutableStateFlow(false)
@@ -35,6 +35,11 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     private val _lastCapturedPhotoPath = MutableStateFlow<String?>(null)
     val lastCapturedPhotoPath: StateFlow<String?> = _lastCapturedPhotoPath.asStateFlow()
     
+
+    fun updateSnackbar(message: String) {
+        _snackbarMessage.value = message
+    }
+
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
     
@@ -113,6 +118,74 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             Timber.e(e, "CameraViewModel: Error saving photo to album")
             _snackbarMessage.value = "Error saving photo: ${e.message}"
+        }
+    }
+    /**
+     * Create a temporary video file for capture
+     * @param albumId The album to save the video to
+     * @return Temporary file for video capture
+     */
+    fun createTempVideoFile(albumId: Long): File {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val filename = "VID_${timestamp}.mp4"
+        
+        val albumDir = storage.getPhotosDir(albumId)
+        return File(albumDir, filename)
+    }
+
+    /**
+     * Save captured video to album and repository
+     * @param videoFile The captured video file
+     * @param albumId The album to save to
+     */
+    fun saveVideoToAlbum(videoFile: File, albumId: Long) = viewModelScope.launch {
+        try {
+            Timber.d("CameraViewModel: Saving video to album $albumId: ${videoFile.absolutePath}")
+            
+            // Validate video file
+            if (!videoFile.exists() || videoFile.length() == 0L) {
+                Timber.e("CameraViewModel: Invalid video file - exists: ${videoFile.exists()}, size: ${videoFile.length()}")
+                _snackbarMessage.value = "Invalid video file"
+                return@launch
+            }
+            
+            // Add video to repository (using same path as photos for simplicity)
+            val (photoId, finalPath) = photoRepo.addPhotoFromPath(
+                albumId = albumId,
+                originalPath = videoFile.absolutePath,
+                filename = videoFile.name,
+                width = 1920, // Default width (will be updated if metadata extractor supports it)
+                height = 1080, // Default height
+                sizeBytes = videoFile.length(),
+                takenAt = System.currentTimeMillis()
+            )
+            
+            if (photoId > 0) {
+                Timber.d("CameraViewModel: Successfully saved video with ID: $photoId")
+                // Wait for thumbnail generation and get the photo entity to use thumbnail path
+                // Poll for thumbnail path (thumbnail generation is async)
+                var attempts = 0
+                var photoEntity: com.example.photoapp10.feature.photo.data.PhotoEntity? = null
+                while (attempts < 10) { // Try up to 10 times (2 seconds total)
+                    kotlinx.coroutines.delay(200)
+                    photoEntity = photoRepo.getPhoto(photoId)
+                    if (photoEntity?.thumbPath?.isNotBlank() == true) {
+                        break
+                    }
+                    attempts++
+                }
+                // Use thumbnail path if available, otherwise use video path
+                _lastCapturedPhotoPath.value = photoEntity?.thumbPath?.takeIf { it.isNotBlank() } ?: finalPath
+                Timber.d("CameraViewModel: Using thumbnail path: ${_lastCapturedPhotoPath.value}")
+                _snackbarMessage.value = "Video saved successfully"
+            } else {
+                Timber.e("CameraViewModel: Failed to save video to repository")
+                _snackbarMessage.value = "Failed to save video"
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "CameraViewModel: Error saving video to album")
+            _snackbarMessage.value = "Error saving video: ${e.message}"
         }
     }
     

@@ -8,14 +8,14 @@ import timber.log.Timber
 import java.io.File
 import java.io.IOException
 
-class AppStorage(private val context: Context) {
+class AppStorage(private val context: Context, accountId: String? = null) {
 
     private val filesDir = context.filesDir
-    private val photosDir = File(filesDir, "photos")
-    private val thumbsDir = File(filesDir, "thumbs")
+    private val baseDir = if (!accountId.isNullOrBlank()) File(filesDir, "accounts/$accountId") else filesDir
+    private val photosDir = File(baseDir, "photos")
+    private val thumbsDir = File(baseDir, "thumbs")
 
     init {
-        // Ensure base directories exist
         photosDir.mkdirs()
         thumbsDir.mkdirs()
         Timber.d("AppStorage initialized: photos=${photosDir.absolutePath}, thumbs=${thumbsDir.absolutePath}")
@@ -36,13 +36,13 @@ class AppStorage(private val context: Context) {
 
     /** photos/{albumId}/{photoId}.jpg */
     fun photoFile(albumId: Long, photoId: Long, ext: String = "jpg"): File {
-        val dir = File(context.filesDir, "photos/$albumId").apply { mkdirs() }
+        val dir = File(photosDir, albumId.toString()).apply { mkdirs() }
         return File(dir, "$photoId.$ext")
     }
 
     /** thumbs/{albumId}/{photoId}.jpg */
     fun thumbFile(albumId: Long, photoId: Long): File {
-        val dir = File(context.filesDir, "thumbs/$albumId").apply { mkdirs() }
+        val dir = File(thumbsDir, albumId.toString()).apply { mkdirs() }
         return File(dir, "$photoId.jpg")
     }
 
@@ -155,7 +155,7 @@ class AppStorage(private val context: Context) {
     }
 
     fun getTotalAppStorageSize(): Long {
-        return getDirectorySize(filesDir)
+        return getDirectorySize(baseDir)
     }
 
     fun getAvailableSpace(): Long {

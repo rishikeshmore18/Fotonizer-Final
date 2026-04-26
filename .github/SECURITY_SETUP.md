@@ -172,3 +172,4 @@ cat .gitignore | grep -E "(client_secret|google-services)"
 **Repository**: Foto-Nizer
 **Status**: Public Repository - Secrets Required
 
+

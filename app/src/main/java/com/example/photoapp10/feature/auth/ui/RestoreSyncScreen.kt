@@ -11,7 +11,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.photoapp10.R
+import com.rishikeshmore.fotonizer.R
 import com.example.photoapp10.feature.backup.drive.driveAppDataOrNull
 import com.example.photoapp10.feature.backup.domain.DriveRestore
 import kotlinx.coroutines.launch

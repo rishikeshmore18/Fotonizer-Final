@@ -20,7 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.example.photoapp10.R
+import com.rishikeshmore.fotonizer.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

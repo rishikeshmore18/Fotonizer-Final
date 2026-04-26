@@ -14,7 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.example.photoapp10.core.permissions.PermissionManager
 import com.example.photoapp10.feature.backup.domain.CloudArchiveScheduler
+import com.example.photoapp10.feature.backup.work.TempModeCleanupWorker
 import com.example.photoapp10.ui.theme.PhotoAppTheme
+import com.rishikeshmore.fotonizer.BuildConfig
 import timber.log.Timber
 
 class MainActivity : ComponentActivity() {
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
         archiveScheduler = CloudArchiveScheduler(this)
         
         enableEdgeToEdge()
+        TempModeCleanupWorker.schedule(this)
         Timber.i("MainActivity: enableEdgeToEdge completed")
         
         // Check if this is first launch and request permissions
@@ -87,6 +90,11 @@ class MainActivity : ComponentActivity() {
         // Add camera permission if not granted
         if (!permissionManager.isCameraPermissionGranted()) {
             permissionsToRequest.add(Manifest.permission.CAMERA)
+        }
+        
+        // Add microphone permission for video recording
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
         }
         
         // Add storage permissions if not granted (for older Android versions)

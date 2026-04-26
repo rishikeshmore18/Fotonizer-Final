@@ -29,7 +29,9 @@ data class BackupAlbum(
     val photoCount: Int,
     val favorite: Boolean = false,
     val emoji: String? = null,
-    val updatedAt: Long
+    val updatedAt: Long,
+    /** Parent album ID for nested folders. null = root level album */
+    val parentId: Long? = null
 )
 
 @Serializable

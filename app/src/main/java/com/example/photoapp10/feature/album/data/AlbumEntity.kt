@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
     tableName = "albums",
     indices = [
         Index(value = ["name"], unique = false),
-        Index(value = ["updatedAt"], unique = false)
+        Index(value = ["updatedAt"], unique = false),
+        Index(value = ["parentId"], unique = false)
     ]
 )
 data class AlbumEntity(
@@ -20,6 +21,8 @@ data class AlbumEntity(
     val emoji: String? = null,
     val updatedAt: Long = System.currentTimeMillis(),
     /** Backup status: 0 = not backed up, >0 = backed up timestamp */
-    val backedUpAt: Long = 0L
+    val backedUpAt: Long = 0L,
+    /** Parent album ID for nested folders. null = root level album */
+    val parentId: Long? = null
 )
 

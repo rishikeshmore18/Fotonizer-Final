@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.photoapp10"
+    namespace = "com.rishikeshmore.fotonizer"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.photoapp10"
+        applicationId = "com.rishikeshmore.fotonizer"
         minSdk = 24  // Android Nougat
         targetSdk = 35
         versionCode = 1
@@ -106,7 +106,13 @@ dependencies {
     implementation("androidx.camera:camera-core:$cameraX")
     implementation("androidx.camera:camera-camera2:$cameraX")
     implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation("androidx.camera:camera-video:$cameraX")
     implementation("androidx.camera:camera-view:1.3.4")
+
+    // Media3 (ExoPlayer)
+    val media3Version = "1.2.0"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
 
     // Room (DB)
     val room = "2.7.0"

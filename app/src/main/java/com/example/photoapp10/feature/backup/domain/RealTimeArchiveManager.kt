@@ -4,11 +4,7 @@ import android.content.Context
 import com.example.photoapp10.core.db.AppDb
 import com.example.photoapp10.core.file.AppStorage
 import com.example.photoapp10.core.thumb.Thumbnailer
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import com.example.photoapp10.feature.backup.CloudArchiveQueueManager
 import timber.log.Timber
 
 /**
@@ -19,17 +15,12 @@ class RealTimeArchiveManager(
     private val context: Context,
     private val db: AppDb,
     private val storage: AppStorage,
-    private val thumbnailer: Thumbnailer
+    private val thumbnailer: Thumbnailer,
+    private val queueManager: CloudArchiveQueueManager
 ) {
     // Debounced archive requests (5-second debounce to avoid excessive uploads)
     private var lastArchiveRequestTime = 0L
     private val minArchiveInterval = 5000L // 5 seconds
-    
-    // Coroutine scope for background operations
-    private val archiveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    
-    // Cloud archive manager instance
-    private val cloudArchiveManager = CloudArchiveManager(context, db, storage, thumbnailer)
     
     /**
      * Request a real-time archive operation
@@ -46,25 +37,8 @@ class RealTimeArchiveManager(
         
         lastArchiveRequestTime = currentTime
         Timber.d("RealTimeArchiveManager: Requesting archive - reason: $reason")
-        
-        // Launch archive operation in background
-        archiveScope.launch {
-            try {
-                // Small delay to allow for potential batch operations
-                delay(1000) // 1 second delay
-                
-                val result = cloudArchiveManager.archiveToCloud()
-                
-                if (result.success) {
-                    Timber.i("RealTimeArchiveManager: Archive completed successfully - Albums: ${result.albumsArchived}, Photos: ${result.photosArchived}")
-                } else {
-                    Timber.w("RealTimeArchiveManager: Archive failed - ${result.message}")
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "RealTimeArchiveManager: Error during real-time archive")
-                // Don't throw - this is a background operation that shouldn't affect main functionality
-            }
-        }
+
+        queueManager.requestArchive(reason = reason, force = false)
     }
     
     /**
@@ -73,19 +47,7 @@ class RealTimeArchiveManager(
      */
     fun forceArchive(reason: String = "force_request") {
         Timber.d("RealTimeArchiveManager: Force archive requested - reason: $reason")
-        
-        archiveScope.launch {
-            try {
-                val result = cloudArchiveManager.archiveToCloud()
-                
-                if (result.success) {
-                    Timber.i("RealTimeArchiveManager: Force archive completed - Albums: ${result.albumsArchived}, Photos: ${result.photosArchived}")
-                } else {
-                    Timber.w("RealTimeArchiveManager: Force archive failed - ${result.message}")
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "RealTimeArchiveManager: Error during force archive")
-            }
-        }
+
+        queueManager.requestArchive(reason = reason, force = true)
     }
 }

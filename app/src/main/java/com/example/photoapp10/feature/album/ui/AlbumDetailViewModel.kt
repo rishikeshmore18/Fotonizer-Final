@@ -7,6 +7,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photoapp10.core.di.Modules
+import com.example.photoapp10.core.util.MediaPreviewResolver
 import com.example.photoapp10.feature.album.data.AlbumEntity
 import com.example.photoapp10.feature.album.domain.AlbumRepository
 import com.example.photoapp10.feature.photo.data.PhotoEntity
@@ -27,6 +28,7 @@ import java.io.File
 
 class AlbumDetailViewModel(app: Application, albumId: Long) : AndroidViewModel(app) {
 
+    private val currentAlbumId: Long = albumId
     private val photosRepo: PhotoRepository = Modules.providePhotoRepository(app)
     private val albumRepo: AlbumRepository = Modules.provideAlbumRepository(app)
     private val userPrefs = UserPrefs(app)
@@ -45,31 +47,49 @@ class AlbumDetailViewModel(app: Application, albumId: Long) : AndroidViewModel(a
     )
     val sort: StateFlow<SortMode> = _sort
 
-    // Album data for the title - safer implementation
-    val album: StateFlow<AlbumEntity?> = albumRepo.observeAlbums()
-        .stateIn(
-            scope = viewModelScope, 
-            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 1000L), 
-            initialValue = emptyList()
-        )
-        .map { albums -> 
-            try {
-                albums.find { it.id == albumId }
-            } catch (e: Exception) {
-                Timber.e(e, "Error finding album")
-                null
-            }
+    // Album data for the title - observe changes
+    val album: StateFlow<AlbumEntity?> = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(albumRepo.getAlbumById(currentAlbumId))
+            kotlinx.coroutines.delay(1000) // Poll every second for changes
         }
-        .stateIn(
-            scope = viewModelScope, 
-            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 1000L), 
-            initialValue = null
-        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 1000L),
+        initialValue = null
+    )
+    
+    // Breadcrumb path for navigation
+    val breadcrumbPath: StateFlow<List<AlbumEntity>> = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(albumRepo.getBreadcrumbPath(currentAlbumId))
+            kotlinx.coroutines.delay(1000) // Poll every second for changes
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 1000L),
+        initialValue = emptyList()
+    )
+    
+    // Sub-albums (nested folders) - observe by parentId
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val subAlbums = sort.flatMapLatest { s ->
+        try {
+            albumRepo.observeAlbumsByParent(currentAlbumId, s)
+        } catch (e: Exception) {
+            Timber.e(e, "Error observing sub-albums")
+            kotlinx.coroutines.flow.flowOf(emptyList())
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 1000L),
+        initialValue = emptyList()
+    )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val photos = sort.flatMapLatest { s ->
         try {
-            photosRepo.observePhotos(albumId, s)
+            photosRepo.observePhotos(currentAlbumId, s)
         } catch (e: Exception) {
             Timber.e(e, "Error observing photos")
             kotlinx.coroutines.flow.flowOf(emptyList())
@@ -324,6 +344,105 @@ class AlbumDetailViewModel(app: Application, albumId: Long) : AndroidViewModel(a
         } catch (e: Exception) {
             Timber.e(e, "AlbumDetailViewModel: Error extracting album ID from path: $path")
             0L
+        }
+    }
+    
+    // Create nested album
+    suspend fun createAlbum(name: String): Long {
+        return try {
+            albumRepo.createAlbum(name, currentAlbumId)
+        } catch (e: Exception) {
+            Timber.e(e, "Error creating nested album")
+            -1L
+        }
+    }
+    
+    // Rename album (for current album)
+    fun renameAlbum(newName: String) = viewModelScope.launch {
+        try {
+            albumRepo.renameAlbum(currentAlbumId, newName)
+        } catch (e: Exception) {
+            Timber.e(e, "Error renaming album")
+        }
+    }
+    
+    // Rename any album by ID (for sub-folders)
+    fun renameAlbumById(albumId: Long, newName: String) = viewModelScope.launch {
+        try {
+            if (albumId > 0) {
+                albumRepo.renameAlbum(albumId, newName)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error renaming album $albumId")
+        }
+    }
+    
+    // Set emoji for current album
+    fun setEmoji(emoji: String?) = viewModelScope.launch {
+        try {
+            albumRepo.setEmoji(currentAlbumId, emoji)
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting emoji")
+        }
+    }
+    
+    // Set emoji for any album by ID (for sub-folders)
+    fun setEmojiForAlbum(albumId: Long, emoji: String?) = viewModelScope.launch {
+        try {
+            if (albumId > 0) {
+                albumRepo.setEmoji(albumId, emoji)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting emoji for album $albumId")
+        }
+    }
+    
+    // Toggle favorite for album by ID
+    fun toggleFavoriteAlbum(albumId: Long) = viewModelScope.launch {
+        try {
+            if (albumId > 0) {
+                albumRepo.toggleFavorite(albumId)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error toggling favorite for album $albumId")
+        }
+    }
+    
+    // Delete album by ID
+    fun deleteAlbum(album: AlbumEntity) = viewModelScope.launch {
+        try {
+            albumRepo.deleteAlbum(album)
+        } catch (e: Exception) {
+            Timber.e(e, "Error deleting album ${album.id}")
+        }
+    }
+
+    fun updateSubAlbumCovers() = viewModelScope.launch {
+        try {
+            subAlbums.value.forEach { album ->
+                if (album.id > 0 && (album.coverPhotoId == null || album.coverPhotoId <= 0L)) {
+                    albumRepo.updateCoverFromFirstPhoto(album.id)
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating child album covers")
+        }
+    }
+
+    suspend fun getCoverImagePath(album: AlbumEntity?): String? {
+        return try {
+            if (album == null) return null
+
+            val coverPhotoId = album.coverPhotoId ?: return null
+            if (coverPhotoId <= 0L) return null
+
+            val photo = photosRepo.getPhoto(coverPhotoId) ?: return null
+            MediaPreviewResolver.resolvePreviewPath(photo.thumbPath, photo.path)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            null
+        } catch (e: Exception) {
+            Timber.e(e, "Error getting child album cover image path for album ${album?.id}")
+            null
         }
     }
 }

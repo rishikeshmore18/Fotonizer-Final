@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photoapp10.core.di.Modules
+import com.example.photoapp10.core.util.MediaPreviewResolver
 import com.example.photoapp10.feature.album.data.AlbumEntity
 import com.example.photoapp10.feature.album.domain.AlbumRepository
 import com.example.photoapp10.feature.photo.domain.PhotoRepository
@@ -64,11 +65,11 @@ class AlbumsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    suspend fun createAndReturnId(name: String): Long {
+    suspend fun createAndReturnId(name: String, parentId: Long? = null): Long {
         return try {
             val trimmed = name.trim()
             if (trimmed.isEmpty()) return -1L
-            repo.createAlbum(trimmed)
+            repo.createAlbum(trimmed, parentId)
         } catch (e: Exception) {
             Timber.e(e, "Error creating album and returning ID")
             -1L
@@ -270,14 +271,7 @@ class AlbumsViewModel(app: Application) : AndroidViewModel(app) {
             
             val photo = photoRepo.getPhoto(coverPhotoId) ?: return null
             
-            val thumbPath = photo.thumbPath
-            val path = photo.path
-            
-            if (thumbPath.isNullOrBlank()) {
-                if (path.isNullOrBlank()) null else path
-            } else {
-                thumbPath
-            }
+            MediaPreviewResolver.resolvePreviewPath(photo.thumbPath, photo.path)
         } catch (e: kotlinx.coroutines.CancellationException) {
             // This is expected when the composition is cancelled
             // Don't log this as an error

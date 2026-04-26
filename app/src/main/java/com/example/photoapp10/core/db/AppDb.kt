@@ -15,7 +15,7 @@ import com.example.photoapp10.feature.photo.data.PhotoEntity
 
 @Database(
     entities = [AlbumEntity::class, PhotoEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -24,52 +24,65 @@ abstract class AppDb : RoomDatabase() {
     abstract fun photoDao(): PhotoDao
 
     companion object {
-        @Volatile private var INSTANCE: AppDb? = null
+        @Volatile private var instances = mutableMapOf<String, AppDb>()
 
-        // Migration from version 1 to 2: Add missing columns
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // Add any missing columns from version 1 to 2
                 database.execSQL("ALTER TABLE photos ADD COLUMN favorite INTEGER")
                 database.execSQL("ALTER TABLE photos ADD COLUMN caption TEXT")
                 database.execSQL("ALTER TABLE photos ADD COLUMN tags TEXT")
-                
-                // Set default values for existing records
                 database.execSQL("UPDATE photos SET favorite = 0 WHERE favorite IS NULL")
             }
         }
 
-        // Migration from version 2 to 3: Add emoji column to albums table
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE albums ADD COLUMN emoji TEXT")
             }
         }
 
-        // Migration from version 3 to 4: Add backup status fields
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // Add columns as nullable first
                 database.execSQL("ALTER TABLE photos ADD COLUMN backedUpAt INTEGER")
                 database.execSQL("ALTER TABLE albums ADD COLUMN backedUpAt INTEGER")
-                
-                // Set default values for existing records
                 database.execSQL("UPDATE photos SET backedUpAt = 0 WHERE backedUpAt IS NULL")
                 database.execSQL("UPDATE albums SET backedUpAt = 0 WHERE backedUpAt IS NULL")
             }
         }
 
-        fun get(context: Context): AppDb =
-            INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE albums ADD COLUMN parentId INTEGER")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_albums_parentId ON albums(parentId)")
+            }
+        }
+
+        fun get(context: Context): AppDb = get(context, "photoapp10.db")
+
+        fun get(context: Context, dbName: String): AppDb =
+            instances[dbName] ?: synchronized(this) {
+                instances[dbName] ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDb::class.java,
-                    "photoapp10.db"
+                    dbName
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .addTypeConverter(Converters())
                     .build()
-                    .also { INSTANCE = it }
+                    .also { instances[dbName] = it }
             }
+
+        fun closeAndRemove(dbName: String) {
+            synchronized(this) {
+                instances.remove(dbName)?.close()
+            }
+        }
+
+        fun closeAll() {
+            synchronized(this) {
+                instances.values.forEach { it.close() }
+                instances.clear()
+            }
+        }
     }
 }

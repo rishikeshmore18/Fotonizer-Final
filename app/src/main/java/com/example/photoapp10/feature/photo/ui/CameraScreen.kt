@@ -418,8 +418,7 @@ fun CameraScreen(
                                             if (provider.hasCamera(nextSelector)) {
                                                 lensFacing = requestedLensFacing
                                             } else {
-                                                viewModel.updateSnackbar("Requested camera is not available on this device")
-                                            }
+                                             }
                                         } catch (e: Exception) {
                                             Timber.e(e, "Failed to switch camera lens")
                                             viewModel.updateSnackbar("Unable to switch camera")

@@ -5,9 +5,9 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -50,19 +50,7 @@ class MainActivity : ComponentActivity() {
         permissionManager = PermissionManager(this)
         archiveScheduler = CloudArchiveScheduler(this)
         
-        enableEdgeToEdge()
-        TempModeCleanupWorker.schedule(this)
-        Timber.i("MainActivity: enableEdgeToEdge completed")
-        
-        // Check if this is first launch and request permissions
-        if (!permissionManager.areAllPermissionsGranted()) {
-            Timber.i("MainActivity: First launch - requesting permissions")
-            requestPermissions()
-        } else {
-            Timber.i("MainActivity: All permissions already granted")
-            // Schedule automatic archiving
-            archiveScheduler.scheduleDailyArchive()
-        }
+        Timber.i("MainActivity: Window setup completed")
 
         Timber.i("MainActivity: About to call setContent")
         try {
@@ -70,7 +58,10 @@ class MainActivity : ComponentActivity() {
                 Timber.i("MainActivity: Inside setContent lambda")
                 PhotoAppTheme {
                     Timber.i("MainActivity: Inside PhotoAppTheme")
-                    Surface(modifier = Modifier.fillMaxSize()) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
                         Timber.i("MainActivity: About to call AppNav")
                         AppNav()
                         Timber.i("MainActivity: AppNav called successfully")
@@ -82,6 +73,46 @@ class MainActivity : ComponentActivity() {
             // Fallback UI or error handling could be added here
         }
         Timber.i("MainActivity: setContent completed")
+
+        window.decorView.post {
+            ensureLaunchSurfaceVisible()
+            runDeferredStartupWork()
+        }
+    }
+
+    private fun ensureLaunchSurfaceVisible() {
+        try {
+            window.decorView.alpha = 1f
+            val attrs = window.attributes
+            if (attrs.alpha != 1f) {
+                attrs.alpha = 1f
+                window.attributes = attrs
+            }
+            window.decorView.requestLayout()
+            window.decorView.invalidate()
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+                reportFullyDrawn()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "MainActivity: Failed to ensure launch surface visibility")
+        }
+    }
+
+    private fun runDeferredStartupWork() {
+        try {
+            TempModeCleanupWorker.schedule(this)
+
+            // Check permissions after the first UI frame has been scheduled.
+            if (!permissionManager.areAllPermissionsGranted()) {
+                Timber.i("MainActivity: First launch - requesting permissions")
+                requestPermissions()
+            } else {
+                Timber.i("MainActivity: All permissions already granted")
+                archiveScheduler.scheduleDailyArchive()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "MainActivity: Deferred startup work failed")
+        }
     }
     
     private fun requestPermissions() {
@@ -95,14 +126,6 @@ class MainActivity : ComponentActivity() {
         // Add microphone permission for video recording
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
-        }
-        
-        // Add storage permissions if not granted (for older Android versions)
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (!permissionManager.areStoragePermissionsGranted()) {
-                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
         }
         
         // Add background permissions if not granted

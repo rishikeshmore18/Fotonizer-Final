@@ -18,9 +18,7 @@ class PermissionManager(private val context: Context) {
         
         private val REQUIRED_PERMISSIONS = arrayOf(
             Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO, // For video recording
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
+            Manifest.permission.RECORD_AUDIO // For video recording
         )
         
         private val BACKGROUND_PERMISSIONS = arrayOf(
@@ -52,19 +50,8 @@ class PermissionManager(private val context: Context) {
      * Check if storage permissions are granted
      */
     fun areStoragePermissionsGranted(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // For Android 13+, we don't need storage permissions for media
-            true
-        } else {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            ) == PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ) == PackageManager.PERMISSION_GRANTED
-        }
+        // App uses app-scoped storage and SAF for backup/import flows.
+        return true
     }
 
     /**
@@ -105,14 +92,6 @@ class PermissionManager(private val context: Context) {
         // Add microphone permission for video recording
         if (!isMicrophonePermissionGranted()) {
             permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
-        }
-        
-        // Add storage permissions if not granted (for older Android versions)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            if (!areStoragePermissionsGranted()) {
-                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
         }
         
         // Add background permissions if not granted

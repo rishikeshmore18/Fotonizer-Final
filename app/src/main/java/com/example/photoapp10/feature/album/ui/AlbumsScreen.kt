@@ -42,13 +42,15 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FabPosition
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -85,6 +87,7 @@ import com.example.photoapp10.core.account.TempModeManager
 import com.example.photoapp10.feature.auth.AuthManager
 import com.example.photoapp10.feature.backup.SyncState
 import com.example.photoapp10.feature.photo.domain.SortMode
+import com.example.photoapp10.ui.components.FloatingBottomBar
 import com.example.photoapp10.ui.theme.FavoriteStarColor
 import com.rishikeshmore.fotonizer.R
 
@@ -277,7 +280,10 @@ fun AlbumsScreen(
             )
         },
         bottomBar = {
-            BottomAppBar {
+            BottomAppBar(
+                containerColor = Color.Transparent,
+                tonalElevation = 0.dp
+            ) {
                 when {
                     // Paste mode - show Paste/Cancel
                     copyMoveState.hasPendingOperation() -> {
@@ -501,239 +507,17 @@ fun AlbumsScreen(
                     
                     // Normal mode - show regular buttons
                     else -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Create Album button on the left
-                            IconButton(
-                                onClick = { 
-                                    showNewAlbumDialog = true
-                                },
-                                modifier = Modifier.size(48.dp) // Standard size
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.create_new_folder_24),
-                                    contentDescription = "Create Album",
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                            
-                            // Camera button in the center (larger) - direct camera access
-                            IconButton(
-                                onClick = { 
-                                    // Navigate to CameraX screen for default album
-                                    nav.navigate("camera/0")
-                                },
-                                modifier = Modifier.size(72.dp) // Larger than other icons
-                            ) {
-                                Icon(
-                                    painter = painterResource(android.R.drawable.ic_menu_camera),
-                                    contentDescription = "Camera",
-                                    modifier = Modifier.size(40.dp) // Larger icon
-                                )
-                            }
-                            
-                            // Hamburger menu on the right
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.menu_24),
-                                        contentDescription = "Menu"
-                                    )
-                                }
-                                
-                                DropdownMenu(
-                                    expanded = showMenu,
-                                    onDismissRequest = { showMenu = false }
-                                ) {
-                                    if (selectionState.isSelectionMode.value) {
-                                        // Selection mode menu items
-                                        DropdownMenuItem(
-                                    text = { Text("Share") },
-                                    onClick = { 
-                                        try {
-                                            // Share functionality not implemented yet
-                                            // This will be added in a future update
-                                        } catch (e: Exception) {
-                                            // Handle any errors gracefully
-                                        }
-                                        showMenu = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            painter = painterResource(android.R.drawable.ic_menu_share),
-                                            contentDescription = "Share"
-                                        )
-                                    }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Favorite") },
-                                    onClick = { 
-                                        try {
-                                            selectionState.getSelectedItems().forEach { album ->
-                                                vm.toggleFavorite(album.id)
-                                            }
-                                            selectionState.clearSelection()
-                                        } catch (e: Exception) {
-                                            // Handle any errors gracefully
-                                            selectionState.clearSelection()
-                                        }
-                                        showMenu = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            painter = painterResource(android.R.drawable.btn_star_big_on),
-                                            contentDescription = "Favorite"
-                                        )
-                                    }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Delete") },
-                                    onClick = { 
-                                        try {
-                                            // Delete selected albums
-                                            val selectedAlbums = selectionState.getSelectedItems()
-                                            vm.deleteAlbums(selectedAlbums)
-                                            selectionState.clearSelection()
-                                        } catch (e: Exception) {
-                                            // Handle any errors gracefully
-                                            selectionState.clearSelection()
-                                        }
-                                        showMenu = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            painter = painterResource(android.R.drawable.ic_menu_delete),
-                                            contentDescription = "Delete"
-                                        )
-                                    }
-                                        )
-                                    } else {
-                                        val isTempMode = TempModeManager.isTempMode(context)
-
-                                        // About Us — always visible
-                                        DropdownMenuItem(
-                                            text = { Text("About Us") },
-                                            onClick = { 
-                                                nav.navigate("about")
-                                                showMenu = false
-                                            },
-                                            leadingIcon = {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(24.dp)
-                                                        .border(
-                                                            width = 2.dp,
-                                                            color = LocalContentColor.current,
-                                                            shape = CircleShape
-                                                        ),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(
-                                                        text = "i",
-                                                        style = MaterialTheme.typography.labelLarge.copy(
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                        )
-
-                                        if (isTempMode) {
-                                            // Temp Mode: Back to Primary
-                                            DropdownMenuItem(
-                                                text = { Text("Back to Primary Mode") },
-                                                onClick = {
-                                                    showMenu = false
-                                                    TempModeManager.exitTempMode(context)
-                                                    nav.navigate("albums") {
-                                                        popUpTo(0) { inclusive = true }
-                                                    }
-                                                },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        painter = painterResource(android.R.drawable.ic_menu_revert),
-                                                        contentDescription = "Back to Primary Mode"
-                                                    )
-                                                }
-                                            )
-                                        } else {
-                                            // Primary Mode items
-                                            DropdownMenuItem(
-                                                text = { Text("Restore Sync") },
-                                                onClick = { 
-                                                    nav.navigate("restore_sync")
-                                                    showMenu = false
-                                                },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        painter = painterResource(R.drawable.ic_cloud_sync),
-                                                        contentDescription = "Restore Sync"
-                                                    )
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Force Backup") },
-                                                onClick = { 
-                                                    nav.navigate("backup")
-                                                    showMenu = false
-                                                },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        painter = painterResource(android.R.drawable.ic_menu_save),
-                                                        contentDescription = "Force Backup"
-                                                    )
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Temp Mode") },
-                                                onClick = {
-                                                    showMenu = false
-                                                    TempModeManager.enterTempMode(context)
-                                                    nav.navigate("albums") {
-                                                        popUpTo(0) { inclusive = true }
-                                                    }
-                                                },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        painter = painterResource(android.R.drawable.ic_menu_recent_history),
-                                                        contentDescription = "Temp Mode"
-                                                    )
-                                                }
-                                            )
-                                        }
-
-                                        // Sign Out — always visible
-                                        DropdownMenuItem(
-                                            text = { Text("Sign Out") },
-                                            onClick = { 
-                                                showMenu = false
-                                                try {
-                                                    if (isTempMode) TempModeManager.exitTempMode(context)
-                                                    Modules.resetForAccountChange()
-                                                    AccountScopeManager.clearActiveAccount(context)
-                                                    AuthManager.signOut(context) {
-                                                        nav.navigate("signin") {
-                                                            popUpTo(0) { inclusive = true }
-                                                        }
-                                                    }
-                                                } catch (e: Exception) {
-                                                    timber.log.Timber.e(e, "AlbumsScreen: Error signing out")
-                                                }
-                                            },
-                                            leadingIcon = {
-                                                Icon(
-                                                    painter = painterResource(android.R.drawable.ic_menu_revert),
-                                                    contentDescription = "Sign Out"
-                                                )
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        FloatingBottomBar(
+                            leftIcon = painterResource(R.drawable.create_new_folder_24),
+                            leftLabel = "Album",
+                            onLeftClick = { showNewAlbumDialog = true },
+                            centerIcon = painterResource(android.R.drawable.ic_menu_camera),
+                            centerLabel = "Camera",
+                            onCenterClick = { nav.navigate("camera/0") },
+                            rightIcon = painterResource(R.drawable.menu_24),
+                            rightLabel = "More",
+                            onRightClick = { showMenu = true }
+                        )
                     }
                 }
             }
@@ -944,73 +728,416 @@ fun AlbumsScreen(
         )
     }
     
-    // Sort menu - comprehensive with all options
-    if (showSortMenu) {
-        AlertDialog(
-            onDismissRequest = { showSortMenu = false },
-            title = { Text("Sort Albums") },
-            text = { 
-                Column {
-                    Text("Choose how to sort your albums")
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Newest to Oldest
-                    TextButton(
-                        onClick = {
-                            timber.log.Timber.d("AlbumsScreen: Newest to Oldest clicked")
-                            vm.setSort(SortMode.DATE_NEW)
-                            showSortMenu = false
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Newest to Oldest")
-                    }
-                    
-                    // Oldest to Newest
-                    TextButton(
-                        onClick = {
-                            timber.log.Timber.d("AlbumsScreen: Oldest to Newest clicked")
-                            vm.setSort(SortMode.DATE_OLD)
-                            showSortMenu = false
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Oldest to Newest")
-                    }
-                    
-                    // A-Z
-                    TextButton(
-                        onClick = {
-                            timber.log.Timber.d("AlbumsScreen: A-Z clicked")
-                            vm.setSort(SortMode.NAME_ASC)
-                            showSortMenu = false
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("A-Z")
-                    }
-                    
-                    // Z-A
-                    TextButton(
-                        onClick = {
-                            timber.log.Timber.d("AlbumsScreen: Z-A clicked")
-                            vm.setSort(SortMode.NAME_DESC)
-                            showSortMenu = false
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Z-A")
-                    }
+    if (
+        showMenu &&
+        !copyMoveState.hasPendingOperation() &&
+        !selectionState.isSelectionMode.value
+    ) {
+        val isTempMode = TempModeManager.isTempMode(context)
+
+        ModernMoreMenuDialog(
+            isTempMode = isTempMode,
+            onDismissRequest = { showMenu = false },
+            onBackup = {
+                nav.navigate("backup")
+                showMenu = false
+            },
+            onRestore = {
+                nav.navigate("restore_sync")
+                showMenu = false
+            },
+            onTempMode = {
+                showMenu = false
+                TempModeManager.enterTempMode(context)
+                nav.navigate("albums") {
+                    popUpTo(0) { inclusive = true }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { showSortMenu = false }) {
-                    Text("Cancel")
+            onBackToPrimary = {
+                showMenu = false
+                TempModeManager.exitTempMode(context)
+                nav.navigate("albums") {
+                    popUpTo(0) { inclusive = true }
+                }
+            },
+            onAbout = {
+                nav.navigate("about")
+                showMenu = false
+            },
+            onSignOut = {
+                showMenu = false
+                try {
+                    if (isTempMode) TempModeManager.exitTempMode(context)
+                    Modules.resetForAccountChange()
+                    AccountScopeManager.clearActiveAccount(context)
+                    AuthManager.signOut(context) {
+                        nav.navigate("signin") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                } catch (e: Exception) {
+                    timber.log.Timber.e(e, "AlbumsScreen: Error signing out")
                 }
             }
         )
     }
+
+    // Sort menu - comprehensive with all options
+    if (showSortMenu) {
+        ModernSortAlbumsDialog(
+            onDismissRequest = { showSortMenu = false },
+            onNewestToOldest = {
+                timber.log.Timber.d("AlbumsScreen: Newest to Oldest clicked")
+                vm.setSort(SortMode.DATE_NEW)
+                showSortMenu = false
+            },
+            onOldestToNewest = {
+                timber.log.Timber.d("AlbumsScreen: Oldest to Newest clicked")
+                vm.setSort(SortMode.DATE_OLD)
+                showSortMenu = false
+            },
+            onNameAscending = {
+                timber.log.Timber.d("AlbumsScreen: A-Z clicked")
+                vm.setSort(SortMode.NAME_ASC)
+                showSortMenu = false
+            },
+            onNameDescending = {
+                timber.log.Timber.d("AlbumsScreen: Z-A clicked")
+                vm.setSort(SortMode.NAME_DESC)
+                showSortMenu = false
+            }
+        )
+    }
     
+}
+
+@Composable
+private fun ModernMoreMenuDialog(
+    isTempMode: Boolean,
+    onDismissRequest: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+    onTempMode: () -> Unit,
+    onBackToPrimary: () -> Unit,
+    onAbout: () -> Unit,
+    onSignOut: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismissRequest) {
+        ModernMoreMenuContent(
+            isTempMode = isTempMode,
+            onBackup = onBackup,
+            onRestore = onRestore,
+            onTempMode = onTempMode,
+            onBackToPrimary = onBackToPrimary,
+            onAbout = onAbout,
+            onSignOut = onSignOut
+        )
+    }
+}
+
+@Composable
+private fun ModernSortAlbumsDialog(
+    onDismissRequest: () -> Unit,
+    onNewestToOldest: () -> Unit,
+    onOldestToNewest: () -> Unit,
+    onNameAscending: () -> Unit,
+    onNameDescending: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        shape = RoundedCornerShape(26.dp),
+        containerColor = Color(0xFFFCF8FF),
+        tonalElevation = 0.dp,
+        title = {
+            Text(
+                text = "Sort Albums",
+                color = Color(0xFF1F2430),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.SemiBold
+                )
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Choose how to sort your albums",
+                    color = Color(0xFF6B6476),
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                ModernSortOptionRow(
+                    badge = "1",
+                    title = "Newest to Oldest",
+                    subtitle = "Recently created albums first",
+                    onClick = onNewestToOldest
+                )
+                ModernSortOptionRow(
+                    badge = "9",
+                    title = "Oldest to Newest",
+                    subtitle = "Earliest created albums first",
+                    onClick = onOldestToNewest
+                )
+                ModernSortOptionRow(
+                    badge = "A",
+                    title = "A-Z",
+                    subtitle = "Album names ascending",
+                    onClick = onNameAscending
+                )
+                ModernSortOptionRow(
+                    badge = "Z",
+                    title = "Z-A",
+                    subtitle = "Album names descending",
+                    onClick = onNameDescending
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismissRequest,
+                modifier = Modifier.padding(end = 6.dp, bottom = 4.dp)
+            ) {
+                Text(
+                    text = "Cancel",
+                    color = Color(0xFF2B0B5F),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun ModernSortOptionRow(
+    badge: String,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .background(Color(0xFFF0E7FA), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = badge,
+                color = Color(0xFF2B0B5F),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.Bold
+                )
+            )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = Color(0xFF1F2430),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                maxLines = 1
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = Color(0xFF6B6476),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModernMoreMenuContent(
+    isTempMode: Boolean,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+    onTempMode: () -> Unit,
+    onBackToPrimary: () -> Unit,
+    onAbout: () -> Unit,
+    onSignOut: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(240.dp)
+            .shadow(
+                elevation = 18.dp,
+                shape = RoundedCornerShape(22.dp),
+                clip = false
+            )
+            .background(
+                color = Color(0xFFFCF8FF),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .padding(horizontal = 14.dp, vertical = 14.dp)
+    ) {
+        if (isTempMode) {
+            ModernMenuRow(
+                icon = {
+                    Icon(
+                        painter = painterResource(android.R.drawable.ic_menu_revert),
+                        contentDescription = "Back to Primary Mode",
+                        tint = Color(0xFF2B0B5F),
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                title = "Back to Primary",
+                subtitle = "Return to your main albums",
+                onClick = onBackToPrimary
+            )
+        } else {
+            ModernMenuRow(
+                icon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_cloud_upload_24),
+                        contentDescription = "Backup",
+                        tint = Color(0xFF2B0B5F),
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                title = "Backup",
+                subtitle = "Save your photos",
+                onClick = onBackup
+            )
+            ModernMenuRow(
+                icon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_restore_24),
+                        contentDescription = "Restore",
+                        tint = Color(0xFF2B0B5F),
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                title = "Restore",
+                subtitle = "Restore sync",
+                onClick = onRestore
+            )
+            ModernMenuRow(
+                icon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_clock_24),
+                        contentDescription = "Temp Mode",
+                        tint = Color(0xFF2B0B5F),
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                title = "Temp Mode",
+                subtitle = "Temporarily hide photos",
+                onClick = onTempMode
+            )
+        }
+
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
+            color = Color(0xFFE5DDF2),
+            thickness = 1.dp
+        )
+
+        ModernMenuRow(
+            icon = {
+                ModernInfoIcon()
+            },
+            title = "About",
+            subtitle = null,
+            onClick = onAbout
+        )
+        ModernMenuRow(
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_logout_24),
+                    contentDescription = "Sign Out",
+                    tint = Color(0xFF2B0B5F),
+                    modifier = Modifier.size(24.dp)
+                )
+            },
+            title = "Sign Out",
+            subtitle = null,
+            onClick = onSignOut
+        )
+    }
+}
+
+@Composable
+private fun ModernMenuRow(
+    icon: @Composable () -> Unit,
+    title: String,
+    subtitle: String?,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .background(Color(0xFFF0E7FA), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            icon()
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = Color(0xFF1F2430),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                maxLines = 1
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = Color(0xFF6B6476),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModernInfoIcon() {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .border(
+                width = 2.dp,
+                color = Color(0xFF2B0B5F),
+                shape = CircleShape
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "i",
+            color = Color(0xFF2B0B5F),
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.Bold
+            )
+        )
+    }
 }
 
 @Composable

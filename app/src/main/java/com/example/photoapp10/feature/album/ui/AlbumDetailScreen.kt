@@ -3,14 +3,17 @@ package com.example.photoapp10.feature.album.ui
 import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
@@ -28,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -48,6 +52,7 @@ import androidx.compose.ui.layout.ContentScale
 import com.example.photoapp10.feature.backup.SyncState
 import com.example.photoapp10.feature.photo.domain.SortMode
 import com.example.photoapp10.feature.photo.ui.StaticPhotosGrid
+import com.example.photoapp10.ui.components.FloatingBottomBar
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -336,7 +341,10 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
             )
         },
         bottomBar = {
-            BottomAppBar {
+            BottomAppBar(
+                containerColor = Color.Transparent,
+                tonalElevation = 0.dp
+            ) {
                 when {
                     // Paste mode - show Paste/Cancel
                     copyMoveState.hasPendingOperation() -> {
@@ -641,49 +649,24 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                     
                     // Normal mode - show regular buttons
                     else -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Create Album button on the left
-                            IconButton(
-                                onClick = { 
-                                    showNewAlbumDialog = true
-                                },
-                                modifier = Modifier.size(48.dp) // Standard size
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            FloatingBottomBar(
+                                leftIcon = painterResource(R.drawable.create_new_folder_24),
+                                leftLabel = "Album",
+                                onLeftClick = { showNewAlbumDialog = true },
+                                centerIcon = painterResource(android.R.drawable.ic_menu_camera),
+                                centerLabel = "Camera",
+                                onCenterClick = { nav.navigate("camera/$albumId") },
+                                rightIcon = painterResource(R.drawable.menu_24),
+                                rightLabel = "More",
+                                onRightClick = { showMenu = true }
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 28.dp)
                             ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.create_new_folder_24),
-                                    contentDescription = "Create Album",
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                            
-                            // Camera button in the center (larger) - direct camera access
-                            IconButton(
-                                onClick = { 
-                                    // Navigate to CameraX screen for this album
-                                    nav.navigate("camera/$albumId")
-                                },
-                                modifier = Modifier.size(72.dp) // Larger than other icons
-                            ) {
-                                Icon(
-                                    painter = painterResource(android.R.drawable.ic_menu_camera),
-                                    contentDescription = "Camera",
-                                    modifier = Modifier.size(40.dp) // Larger icon
-                                )
-                            }
-                            
-                            // Hamburger menu on the right
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.menu_24),
-                                        contentDescription = "Menu"
-                                    )
-                                }
-                            
                             DropdownMenu(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false }
@@ -757,9 +740,8 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                                     )
                                 } else {
                                     // Normal mode menu items
-                                    DropdownMenuItem(
-                                        text = { Text("Select All") },
-                                        onClick = { 
+                                    ModernPhotoActionsMenuContent(
+                                        onSelectAll = {
                                             // Select all photos
                                             photos.forEach { photo ->
                                                 if (!selectionState.isSelected(photo)) {
@@ -774,52 +756,19 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                                             }
                                             showMenu = false
                                         },
-                                        leadingIcon = {
-                                            Icon(
-                                                painter = painterResource(android.R.drawable.ic_menu_agenda),
-                                                contentDescription = "Select All"
-                                            )
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Share") },
-                                        onClick = { 
+                                        onShare = {
                                             // Enter selection mode for share
                                             currentAction = "share"
                                             showMenu = false
                                         },
-                                        leadingIcon = {
-                                            Icon(
-                                                painter = painterResource(android.R.drawable.ic_menu_share),
-                                                contentDescription = "Share"
-                                            )
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Favorite") },
-                                        onClick = { 
+                                        onFavorite = {
                                             // Enter selection mode for favorite
                                             currentAction = "favorite"
                                             showMenu = false
                                         },
-                                        leadingIcon = {
-                                            Icon(
-                                                painter = painterResource(android.R.drawable.btn_star_big_on),
-                                                contentDescription = "Favorite"
-                                            )
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Delete All") },
-                                        onClick = { 
+                                        onDeleteAll = {
                                             showDeleteAllDialog = true
                                             showMenu = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                painter = painterResource(android.R.drawable.ic_menu_delete),
-                                                contentDescription = "Delete All"
-                                            )
                                         }
                                     )
                                 }
@@ -910,29 +859,15 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
     
     // Sort menu - simplified with only newest and oldest
     if (showSortMenu) {
-        androidx.compose.material3.AlertDialog(
+        ModernSortPhotosDialog(
             onDismissRequest = { showSortMenu = false },
-            title = { androidx.compose.material3.Text("Sort Photos") },
-            text = { androidx.compose.material3.Text("Choose how to sort your photos") },
-            confirmButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        vm.setSort(SortMode.DATE_NEW)
-                        showSortMenu = false
-                    }
-                ) {
-                    androidx.compose.material3.Text("📅 Newest First")
-                }
+            onNewestFirst = {
+                vm.setSort(SortMode.DATE_NEW)
+                showSortMenu = false
             },
-            dismissButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        vm.setSort(SortMode.DATE_OLD)
-                        showSortMenu = false
-                    }
-                ) {
-                    androidx.compose.material3.Text("📅 Oldest First")
-                }
+            onOldestFirst = {
+                vm.setSort(SortMode.DATE_OLD)
+                showSortMenu = false
             }
         )
     }
@@ -1046,6 +981,208 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
     }
 }
 
+@Composable
+private fun ModernSortPhotosDialog(
+    onDismissRequest: () -> Unit,
+    onNewestFirst: () -> Unit,
+    onOldestFirst: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        shape = RoundedCornerShape(26.dp),
+        containerColor = Color(0xFFFCF8FF),
+        tonalElevation = 0.dp,
+        title = {
+            Text(
+                text = "Sort Photos",
+                color = Color(0xFF1F2430),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.SemiBold
+                )
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Choose how to sort your photos",
+                    color = Color(0xFF6B6476),
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                ModernPhotoSortOptionRow(
+                    badge = "1",
+                    title = "Newest First",
+                    subtitle = "Recently added photos first",
+                    onClick = onNewestFirst
+                )
+                ModernPhotoSortOptionRow(
+                    badge = "9",
+                    title = "Oldest First",
+                    subtitle = "Earliest added photos first",
+                    onClick = onOldestFirst
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismissRequest,
+                modifier = Modifier.padding(end = 6.dp, bottom = 4.dp)
+            ) {
+                Text(
+                    text = "Cancel",
+                    color = Color(0xFF2B0B5F),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun ModernPhotoSortOptionRow(
+    badge: String,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .background(Color(0xFFF0E7FA), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = badge,
+                color = Color(0xFF2B0B5F),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.Bold
+                )
+            )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = Color(0xFF1F2430),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                maxLines = 1
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = Color(0xFF6B6476),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModernPhotoActionsMenuContent(
+    onSelectAll: () -> Unit,
+    onShare: () -> Unit,
+    onFavorite: () -> Unit,
+    onDeleteAll: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(214.dp)
+            .shadow(
+                elevation = 14.dp,
+                shape = RoundedCornerShape(20.dp),
+                clip = false
+            )
+            .background(
+                color = Color(0xFFFCF8FF),
+                shape = RoundedCornerShape(20.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+    ) {
+        ModernPhotoActionRow(
+            iconRes = android.R.drawable.ic_menu_agenda,
+            title = "Select All",
+            onClick = onSelectAll
+        )
+        ModernPhotoActionRow(
+            iconRes = android.R.drawable.ic_menu_share,
+            title = "Share",
+            onClick = onShare
+        )
+        ModernPhotoActionRow(
+            iconRes = android.R.drawable.btn_star_big_on,
+            title = "Favorite",
+            onClick = onFavorite
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            color = Color(0xFFE5DDF2),
+            thickness = 1.dp
+        )
+
+        ModernPhotoActionRow(
+            iconRes = android.R.drawable.ic_menu_delete,
+            title = "Delete All",
+            onClick = onDeleteAll
+        )
+    }
+}
+
+@Composable
+private fun ModernPhotoActionRow(
+    iconRes: Int,
+    title: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(Color(0xFFF0E7FA), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = title,
+                tint = Color(0xFF2B0B5F),
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Text(
+            text = title,
+            color = Color(0xFF1F2430),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.SemiBold
+            ),
+            maxLines = 1
+        )
+    }
+}
 
 @Composable
 private fun EmptyAlbum(modifier: Modifier = Modifier) {

@@ -40,14 +40,11 @@ class SimpleBackupManager(
     }
 
     fun getDefaultBackupFolderPath(): String {
-        val externalDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        val backupDir = File(externalDir, BACKUP_FOLDER_NAME)
-        return backupDir.absolutePath
+        return getScopedBackupFolder().absolutePath
     }
 
     private fun getDefaultBackupFolder(): File {
-        val externalDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        val backupDir = File(externalDir, BACKUP_FOLDER_NAME)
+        val backupDir = getScopedBackupFolder()
         if (!backupDir.exists() && !backupDir.mkdirs()) {
             throw IllegalStateException("Could not create backup folder. Check storage access.")
         }
@@ -55,6 +52,23 @@ class SimpleBackupManager(
             throw IllegalStateException("Backup path is not a folder.")
         }
         return backupDir
+    }
+
+    private fun getScopedBackupFolder(): File {
+        val scopedDocumentsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+        val baseDir = scopedDocumentsDir ?: File(context.filesDir, "documents")
+        return File(baseDir, BACKUP_FOLDER_NAME)
+    }
+
+    private fun getLegacyPublicBackupFolderOrNull(): File? {
+        return try {
+            val publicDocumentsDir =
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            File(publicDocumentsDir, BACKUP_FOLDER_NAME)
+        } catch (e: Exception) {
+            Timber.w(e, "SimpleBackupManager: Legacy public backup folder unavailable")
+            null
+        }
     }
 
     suspend fun hasBackup(): Boolean = withContext(Dispatchers.IO) { listBackupsInternal().isNotEmpty() }
@@ -529,6 +543,33 @@ class SimpleBackupManager(
                 )
             }
             ?.let(backups::addAll)
+
+        // Best-effort legacy discovery from old public Documents location.
+        val legacyRoot = getLegacyPublicBackupFolderOrNull()
+        if (legacyRoot != null && legacyRoot.absolutePath != backupRoot.absolutePath) {
+            runCatching {
+                readBackupInfo(
+                    backupDir = legacyRoot,
+                    backupId = "${LEGACY_BACKUP_ID}_public",
+                    displayName = "Legacy public backup",
+                    isLegacy = true
+                )?.let(backups::add)
+
+                legacyRoot.listFiles()
+                    ?.filter { it.isDirectory }
+                    ?.mapNotNull { snapshotDir ->
+                        readBackupInfo(
+                            backupDir = snapshotDir,
+                            backupId = "legacy_public_${snapshotDir.name}",
+                            displayName = "Legacy ${snapshotDir.name}",
+                            isLegacy = true
+                        )
+                    }
+                    ?.let(backups::addAll)
+            }.onFailure { e ->
+                Timber.w(e, "SimpleBackupManager: Unable to read legacy public backups")
+            }
+        }
 
         return backups
             .sortedByDescending { it.createdAt }

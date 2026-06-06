@@ -35,6 +35,9 @@ import com.example.photoapp10.feature.photo.ui.PhotoDetailScreen
 import com.example.photoapp10.feature.search.ui.SearchScreen
 import com.example.photoapp10.feature.settings.ui.SettingsScreen
 import com.example.photoapp10.feature.settings.ui.AboutScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 @Composable
@@ -42,47 +45,69 @@ fun AppNav(
     navController: NavHostController = rememberNavController()
 ) {
     val context = LocalContext.current
+    val appContext = remember(context) { context.applicationContext }
     val userPrefs = remember { Modules.provideUserPrefs(context) }
+    var startDestination by remember { mutableStateOf<String?>(null) }
 
-    // Ensure account scope is set for already-authenticated users on app start.
-    // Skip when in temp mode — temp mode manages its own namespace.
-    remember {
-        if (TempModeManager.isTempMode(context)) {
-            TempModeManager.ensureTempModeScope(context)
-        } else {
-            val account = AuthManager.getLastAccount(context)
-            if (account != null) {
-                val accountId = account.id ?: account.email ?: "default"
-                if (AccountScopeManager.getActiveAccountId(context) != accountId) {
-                    AccountScopeManager.migrateDefaultDataIfNeeded(context, accountId)
-                    AccountScopeManager.setActiveAccount(context, accountId)
+    LaunchedEffect(appContext) {
+        try {
+            if (TempModeManager.isTempMode(appContext)) {
+                TempModeManager.ensureTempModeScope(appContext)
+            } else {
+                val account = AuthManager.getLastAccount(appContext)
+                if (account != null) {
+                    val accountId = account.id ?: account.email ?: "default"
+                    if (AccountScopeManager.getActiveAccountId(appContext) != accountId) {
+                        withContext(Dispatchers.IO) {
+                            AccountScopeManager.migrateDefaultDataIfNeeded(appContext, accountId)
+                            AccountScopeManager.setActiveAccount(appContext, accountId)
+                        }
+                    }
                 }
             }
-        }
-        true
-    }
 
-    // Collect preferences state without blocking UI
-    val rememberDevice by userPrefs.rememberDeviceFlow(context).collectAsState(initial = true)
-    val restoreGateShown by userPrefs.restoreGateShownFlow(context).collectAsState(initial = false)
-    
-    // Check authentication status once and determine start destination
-    val startDestination by remember {
-        derivedStateOf {
-            val isAuthenticated = AuthManager.isSignedIn(context)
-            
-            when {
-                !isAuthenticated -> "signin"
-                rememberDevice && restoreGateShown -> "albums" // Skip RestoreGate if already shown
-                rememberDevice && !restoreGateShown -> "restore_gate" // First login, show RestoreGate
+            val isAuthenticated = AuthManager.isSignedIn(appContext)
+            if (!isAuthenticated) {
+                startDestination = "signin"
+                return@LaunchedEffect
+            }
+
+            val rememberDevice = userPrefs.rememberDeviceFlow(appContext).first()
+            val restoreGateShown = userPrefs.restoreGateShownFlow(appContext).first()
+
+            startDestination = when {
+                rememberDevice && restoreGateShown -> "albums"
+                rememberDevice && !restoreGateShown -> "restore_gate"
                 else -> "signin"
             }
+        } catch (e: Exception) {
+            Timber.e(e, "AppNav: Failed to resolve startup destination")
+            startDestination = "signin"
         }
     }
     
-    Timber.i("AppNav: Starting with destination: $startDestination")
+    Timber.i("AppNav: Startup destination resolved as: $startDestination")
     
-    NavHost(navController = navController, startDestination = startDestination) {
+    NavHost(navController = navController, startDestination = "startup") {
+        composable("startup") {
+            val resolvedDestination = startDestination
+
+            LaunchedEffect(resolvedDestination) {
+                if (resolvedDestination != null) {
+                    navController.navigate(resolvedDestination) {
+                        popUpTo("startup") { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Loading...")
+            }
+        }
         composable("signin") {
             Timber.i("AppNav: Navigating to SignInScreen")
             SignInScreen(navController)

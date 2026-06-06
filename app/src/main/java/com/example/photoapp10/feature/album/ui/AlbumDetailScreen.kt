@@ -53,6 +53,8 @@ import com.example.photoapp10.feature.backup.SyncState
 import com.example.photoapp10.feature.photo.domain.SortMode
 import com.example.photoapp10.feature.photo.ui.StaticPhotosGrid
 import com.example.photoapp10.ui.components.FloatingBottomBar
+import com.example.photoapp10.ui.components.FloatingCopyMoveAction
+import com.example.photoapp10.ui.components.FloatingCopyMoveBar
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -341,34 +343,31 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
             )
         },
         bottomBar = {
-            BottomAppBar(
-                containerColor = Color.Transparent,
-                tonalElevation = 0.dp
-            ) {
-                when {
+            when {
                     // Paste mode - show Paste/Cancel
                     copyMoveState.hasPendingOperation() -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Cancel button
-                            TextButton(onClick = { 
-                                copyMoveState.clear()
-                            }) {
-                                Text("Cancel")
+                        FloatingCopyMoveBar(
+                            onCancelClick = { copyMoveState.clear() },
+                            menuIcon = painterResource(R.drawable.menu_24),
+                            onMenuClick = { showMenu = true },
+                            menuContent = {
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    // Menu items can be added here if needed in paste mode
+                                    // For now, keeping it simple
+                                }
                             }
-                            
-                            // Paste button
-                            Button(onClick = {
+                        ) {
+                            FloatingCopyMoveAction(label = "Paste", onClick = {
                                 scope.launch {
                                     try {
                                         showProgressDialog = true
                                         progressMessage = "Pasting..."
                                         progressCurrent = 0
                                         progressTotal = 1
-                                        
+
                                         val copyMoveService = CopyMoveService(
                                             albumDao = Modules.provideDb(context).albumDao(),
                                             photoDao = Modules.provideDb(context).photoDao(),
@@ -376,11 +375,11 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                                             photoRepo = Modules.providePhotoRepository(context),
                                             storage = Modules.provideStorage(context)
                                         )
-                                        
+
                                         val albumIds = copyMoveState.getSelectedAlbumIds()
                                         val photoIds = copyMoveState.getSelectedPhotoIds()
                                         val operationType = copyMoveState.operationType.value
-                                        
+
                                         val result = if (operationType == com.example.photoapp10.core.copymove.CopyMoveState.OperationType.COPY) {
                                             copyMoveService.copyItems(
                                                 albumIds = albumIds,
@@ -404,9 +403,9 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                                                 }
                                             )
                                         }
-                                        
+
                                         showProgressDialog = false
-                                        
+
                                         if (result.isSuccess) {
                                             Toast.makeText(
                                                 context,
@@ -420,7 +419,7 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                                                 Toast.LENGTH_LONG
                                             ).show()
                                         }
-                                        
+
                                         copyMoveState.clear()
                                         selectionState.clearSelection()
                                         albumSelectionState.clearSelection()
@@ -434,76 +433,20 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                                         timber.log.Timber.e(e, "Error during paste operation")
                                     }
                                 }
-                            }) {
-                                Text("Paste")
-                            }
-                            
-                            // Hamburger menu
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.menu_24),
-                                        contentDescription = "Menu"
-                                    )
-                                }
-                                
-                                DropdownMenu(
-                                    expanded = showMenu,
-                                    onDismissRequest = { showMenu = false }
-                                ) {
-                                    // Menu items can be added here if needed in paste mode
-                                    // For now, keeping it simple
-                                }
-                            }
+                            })
                         }
                     }
-                    
+
                     // Selection mode - show Copy/Move/Cancel (for photos or albums)
                     (selectionState.isSelectionMode.value || albumSelectionState.isSelectionMode.value) && currentAction == null -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Cancel button
-                            TextButton(onClick = { 
+                        FloatingCopyMoveBar(
+                            onCancelClick = {
                                 selectionState.clearSelection()
                                 albumSelectionState.clearSelection()
-                            }) {
-                                Text("Cancel")
-                            }
-                            
-                            // Copy button
-                            Button(onClick = {
-                                val selectedAlbums = albumSelectionState.getSelectedItems()
-                                val selectedPhotos = selectionState.getSelectedItems()
-                                copyMoveState.startCopy(selectedAlbums, selectedPhotos)
-                                selectionState.clearSelection()
-                                albumSelectionState.clearSelection()
-                            }) {
-                                Text("Copy")
-                            }
-                            
-                            // Move button
-                            Button(onClick = {
-                                val selectedAlbums = albumSelectionState.getSelectedItems()
-                                val selectedPhotos = selectionState.getSelectedItems()
-                                copyMoveState.startMove(selectedAlbums, selectedPhotos)
-                                selectionState.clearSelection()
-                                albumSelectionState.clearSelection()
-                            }) {
-                                Text("Move")
-                            }
-                            
-                            // Hamburger menu
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.menu_24),
-                                        contentDescription = "Menu"
-                                    )
-                                }
-                                
+                            },
+                            menuIcon = painterResource(R.drawable.menu_24),
+                            onMenuClick = { showMenu = true },
+                            menuContent = {
                                 DropdownMenu(
                                     expanded = showMenu,
                                     onDismissRequest = { showMenu = false }
@@ -590,60 +533,83 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                                     )
                                 }
                             }
+                        ) {
+                            FloatingCopyMoveAction(label = "Copy", onClick = {
+                                val selectedAlbums = albumSelectionState.getSelectedItems()
+                                val selectedPhotos = selectionState.getSelectedItems()
+                                copyMoveState.startCopy(selectedAlbums, selectedPhotos)
+                                selectionState.clearSelection()
+                                albumSelectionState.clearSelection()
+                            })
+                            FloatingCopyMoveAction(label = "Move", onClick = {
+                                val selectedAlbums = albumSelectionState.getSelectedItems()
+                                val selectedPhotos = selectionState.getSelectedItems()
+                                copyMoveState.startMove(selectedAlbums, selectedPhotos)
+                                selectionState.clearSelection()
+                                albumSelectionState.clearSelection()
+                            })
                         }
                     }
                     
                     // Action mode (favorite/share/delete) - show cancel and done
                     selectionState.isSelectionMode.value && currentAction != null -> {
-                        // Action mode - show cancel button
-                        IconButton(onClick = { 
-                            selectionState.clearSelection()
-                            currentAction = null
-                        }) {
-                            Icon(
-                                painter = painterResource(android.R.drawable.ic_menu_close_clear_cancel),
-                                contentDescription = "Cancel"
-                            )
-                        }
-                        
-                        Spacer(modifier = Modifier.weight(1f))
-                        
-                        // Show action type
-                        Text(
-                            text = when (currentAction) {
-                                "favorite" -> "Select photos to favorite"
-                                "share" -> "Select photos to share"
-                                "delete" -> "Select photos to delete"
-                                else -> ""
-                            },
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        
-                        Spacer(modifier = Modifier.weight(1f))
-                        
-                        // Done button
-                        IconButton(onClick = {
-                            try {
-                                val selectedPhotoIds = selectionState.getSelectedItems().map { it.id }
-                                if (selectedPhotoIds.isNotEmpty()) {
-                                    when (currentAction) {
-                                        "favorite" -> vm.toggleFavorites(selectedPhotoIds)
-                                        "share" -> vm.sharePhotos(selectedPhotoIds)
-                                        "delete" -> vm.deleteAllPhotos(selectedPhotoIds)
-                                    }
-                                }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Action mode - show cancel button
+                            IconButton(onClick = {
                                 selectionState.clearSelection()
                                 currentAction = null
-                            } catch (e: Exception) {
-                                // Handle any errors gracefully
-                                selectionState.clearSelection()
-                                currentAction = null
+                            }) {
+                                Icon(
+                                    painter = painterResource(android.R.drawable.ic_menu_close_clear_cancel),
+                                    contentDescription = "Cancel"
+                                )
                             }
-                        }) {
-                            Icon(
-                                painter = painterResource(android.R.drawable.ic_input_add),
-                                contentDescription = "Done"
+
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            // Show action type
+                            Text(
+                                text = when (currentAction) {
+                                    "favorite" -> "Select photos to favorite"
+                                    "share" -> "Select photos to share"
+                                    "delete" -> "Select photos to delete"
+                                    else -> ""
+                                },
+                                style = MaterialTheme.typography.bodyMedium
                             )
+
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            // Done button
+                            IconButton(onClick = {
+                                try {
+                                    val selectedPhotoIds = selectionState.getSelectedItems().map { it.id }
+                                    if (selectedPhotoIds.isNotEmpty()) {
+                                        when (currentAction) {
+                                            "favorite" -> vm.toggleFavorites(selectedPhotoIds)
+                                            "share" -> vm.sharePhotos(selectedPhotoIds)
+                                            "delete" -> vm.deleteAllPhotos(selectedPhotoIds)
+                                        }
+                                    }
+                                    selectionState.clearSelection()
+                                    currentAction = null
+                                } catch (e: Exception) {
+                                    // Handle any errors gracefully
+                                    selectionState.clearSelection()
+                                    currentAction = null
+                                }
+                            }) {
+                                Icon(
+                                    painter = painterResource(android.R.drawable.ic_input_add),
+                                    contentDescription = "Done"
+                                )
+                            }
                         }
                     }
                     
@@ -662,131 +628,48 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
                                 onRightClick = { showMenu = true }
                             )
 
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(end = 28.dp)
-                            ) {
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false }
-                            ) {
-                                if (selectionState.isSelectionMode.value || albumSelectionState.isSelectionMode.value) {
-                                    // Selection mode menu items - handle both photos and albums
-                                    DropdownMenuItem(
-                                        text = { Text("Share") },
-                                        onClick = { 
-                                            // Share selected photos (albums can't be shared)
-                                            val selectedPhotoIds = selectionState.getSelectedItems().map { it.id }
-                                            if (selectedPhotoIds.isNotEmpty()) {
-                                                vm.sharePhotos(selectedPhotoIds)
+                            if (showMenu) {
+                                ModernPhotoActionsMenuBottomSheet(
+                                    onDismissRequest = { showMenu = false },
+                                    onSelectAll = {
+                                        photos.forEach { photo ->
+                                            if (!selectionState.isSelected(photo)) {
+                                                selectionState.toggleSelection(photo)
                                             }
-                                            selectionState.clearSelection()
-                                            albumSelectionState.clearSelection()
-                                            showMenu = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                painter = painterResource(android.R.drawable.ic_menu_share),
-                                                contentDescription = "Share"
-                                            )
                                         }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Favorite") },
-                                        onClick = { 
-                                            // Favorite selected photos and albums
-                                            val selectedPhotoIds = selectionState.getSelectedItems().map { it.id }
-                                            if (selectedPhotoIds.isNotEmpty()) {
-                                                vm.toggleFavorites(selectedPhotoIds)
+                                        subAlbums.forEach { album ->
+                                            if (!albumSelectionState.isSelected(album)) {
+                                                albumSelectionState.toggleSelection(album)
                                             }
-                                            val selectedAlbums = albumSelectionState.getSelectedItems()
-                                            selectedAlbums.forEach { album ->
-                                                vm.toggleFavoriteAlbum(album.id)
-                                            }
-                                            selectionState.clearSelection()
-                                            albumSelectionState.clearSelection()
-                                            showMenu = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                painter = painterResource(android.R.drawable.btn_star_big_on),
-                                                contentDescription = "Favorite"
-                                            )
                                         }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Delete") },
-                                        onClick = { 
-                                            // Delete selected photos and albums
-                                            val selectedPhotoIds = selectionState.getSelectedItems().map { it.id }
-                                            if (selectedPhotoIds.isNotEmpty()) {
-                                                vm.deleteAllPhotos(selectedPhotoIds)
-                                            }
-                                            val selectedAlbums = albumSelectionState.getSelectedItems()
-                                            selectedAlbums.forEach { album ->
-                                                vm.deleteAlbum(album)
-                                            }
-                                            selectionState.clearSelection()
-                                            albumSelectionState.clearSelection()
-                                            showMenu = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                painter = painterResource(android.R.drawable.ic_menu_delete),
-                                                contentDescription = "Delete"
-                                            )
-                                        }
-                                    )
-                                } else {
-                                    // Normal mode menu items
-                                    ModernPhotoActionsMenuContent(
-                                        onSelectAll = {
-                                            // Select all photos
-                                            photos.forEach { photo ->
-                                                if (!selectionState.isSelected(photo)) {
-                                                    selectionState.toggleSelection(photo)
-                                                }
-                                            }
-                                            // Select all albums
-                                            subAlbums.forEach { album ->
-                                                if (!albumSelectionState.isSelected(album)) {
-                                                    albumSelectionState.toggleSelection(album)
-                                                }
-                                            }
-                                            showMenu = false
-                                        },
-                                        onShare = {
-                                            // Enter selection mode for share
-                                            currentAction = "share"
-                                            showMenu = false
-                                        },
-                                        onFavorite = {
-                                            // Enter selection mode for favorite
-                                            currentAction = "favorite"
-                                            showMenu = false
-                                        },
-                                        onDeleteAll = {
-                                            showDeleteAllDialog = true
-                                            showMenu = false
-                                        }
-                                    )
-                                }
-                            }
+                                        showMenu = false
+                                    },
+                                    onShare = {
+                                        currentAction = "share"
+                                        showMenu = false
+                                    },
+                                    onFavorite = {
+                                        currentAction = "favorite"
+                                        showMenu = false
+                                    },
+                                    onDeleteAll = {
+                                        showDeleteAllDialog = true
+                                        showMenu = false
+                                    }
+                                )
                             }
                         }
                     }
-                }
             }
         }
     ) { inner ->
         val hasContent = subAlbums.isNotEmpty() || photos.isNotEmpty()
         LazyColumn(
             modifier = Modifier
-                .padding(inner)
+                .padding(top = inner.calculateTopPadding())
                 .fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
+            contentPadding = PaddingValues(bottom = 132.dp)
         ) {
             item {
                 AlbumSearchBar(
@@ -859,7 +742,7 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
     
     // Sort menu - simplified with only newest and oldest
     if (showSortMenu) {
-        ModernSortPhotosDialog(
+        ModernSortPhotosBottomSheet(
             onDismissRequest = { showSortMenu = false },
             onNewestFirst = {
                 vm.setSort(SortMode.DATE_NEW)
@@ -981,18 +864,30 @@ fun AlbumDetailScreen(albumId: Long, nav: NavController) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModernSortPhotosDialog(
+private fun ModernSortPhotosBottomSheet(
     onDismissRequest: () -> Unit,
     onNewestFirst: () -> Unit,
     onOldestFirst: () -> Unit
 ) {
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+    ModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        shape = RoundedCornerShape(26.dp),
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
         containerColor = Color(0xFFFCF8FF),
-        tonalElevation = 0.dp,
-        title = {
+        contentColor = Color(0xFF1F2430),
+        tonalElevation = 6.dp,
+        scrimColor = Color.Black.copy(alpha = 0.46f),
+        dragHandle = { ModernAlbumBottomSheetHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        ) {
             Text(
                 text = "Sort Photos",
                 color = Color(0xFF1F2430),
@@ -1000,44 +895,52 @@ private fun ModernSortPhotosDialog(
                     fontWeight = FontWeight.SemiBold
                 )
             )
-        },
-        text = {
-            Column {
-                Text(
-                    text = "Choose how to sort your photos",
-                    color = Color(0xFF6B6476),
-                    style = MaterialTheme.typography.bodySmall
-                )
 
-                Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-                ModernPhotoSortOptionRow(
-                    badge = "1",
-                    title = "Newest First",
-                    subtitle = "Recently added photos first",
-                    onClick = onNewestFirst
-                )
-                ModernPhotoSortOptionRow(
-                    badge = "9",
-                    title = "Oldest First",
-                    subtitle = "Earliest added photos first",
-                    onClick = onOldestFirst
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onDismissRequest,
-                modifier = Modifier.padding(end = 6.dp, bottom = 4.dp)
+            Text(
+                text = "Choose how to sort your photos",
+                color = Color(0xFF6B6476),
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            ModernPhotoSortOptionRow(
+                badge = "1",
+                title = "Newest First",
+                subtitle = "Recently added photos first",
+                onClick = onNewestFirst
+            )
+            ModernPhotoSortOptionRow(
+                badge = "9",
+                title = "Oldest First",
+                subtitle = "Earliest added photos first",
+                onClick = onOldestFirst
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                horizontalArrangement = Arrangement.End
             ) {
-                Text(
-                    text = "Cancel",
-                    color = Color(0xFF2B0B5F),
-                    fontWeight = FontWeight.SemiBold
-                )
+                TextButton(onClick = onDismissRequest) {
+                    Text(
+                        text = "Cancel",
+                        color = Color(0xFF2B0B5F),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
+
+            Spacer(
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .height(12.dp)
+            )
         }
-    )
+    }
 }
 
 @Composable
@@ -1092,6 +995,58 @@ private fun ModernPhotoSortOptionRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModernPhotoActionsMenuBottomSheet(
+    onDismissRequest: () -> Unit,
+    onSelectAll: () -> Unit,
+    onShare: () -> Unit,
+    onFavorite: () -> Unit,
+    onDeleteAll: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        containerColor = Color(0xFFFCF8FF),
+        contentColor = Color(0xFF1F2430),
+        tonalElevation = 6.dp,
+        scrimColor = Color.Black.copy(alpha = 0.46f),
+        dragHandle = { ModernAlbumBottomSheetHandle() }
+    ) {
+        ModernPhotoActionsMenuContent(
+            onSelectAll = onSelectAll,
+            onShare = onShare,
+            onFavorite = onFavorite,
+            onDeleteAll = onDeleteAll
+        )
+        Spacer(
+            modifier = Modifier
+                .navigationBarsPadding()
+                .height(12.dp)
+        )
+    }
+}
+
+@Composable
+private fun ModernAlbumBottomSheetHandle() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(48.dp)
+                .height(5.dp)
+                .background(Color(0xFFD8D0E2), RoundedCornerShape(50))
+        )
+    }
+}
+
 @Composable
 private fun ModernPhotoActionsMenuContent(
     onSelectAll: () -> Unit,
@@ -1101,17 +1056,8 @@ private fun ModernPhotoActionsMenuContent(
 ) {
     Column(
         modifier = Modifier
-            .width(214.dp)
-            .shadow(
-                elevation = 14.dp,
-                shape = RoundedCornerShape(20.dp),
-                clip = false
-            )
-            .background(
-                color = Color(0xFFFCF8FF),
-                shape = RoundedCornerShape(20.dp)
-            )
-            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 6.dp)
     ) {
         ModernPhotoActionRow(
             iconRes = android.R.drawable.ic_menu_agenda,

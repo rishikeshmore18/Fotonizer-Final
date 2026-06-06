@@ -37,10 +37,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FabPosition
@@ -50,7 +50,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -88,6 +87,8 @@ import com.example.photoapp10.feature.auth.AuthManager
 import com.example.photoapp10.feature.backup.SyncState
 import com.example.photoapp10.feature.photo.domain.SortMode
 import com.example.photoapp10.ui.components.FloatingBottomBar
+import com.example.photoapp10.ui.components.FloatingCopyMoveAction
+import com.example.photoapp10.ui.components.FloatingCopyMoveBar
 import com.example.photoapp10.ui.theme.FavoriteStarColor
 import com.rishikeshmore.fotonizer.R
 
@@ -280,27 +281,24 @@ fun AlbumsScreen(
             )
         },
         bottomBar = {
-            BottomAppBar(
-                containerColor = Color.Transparent,
-                tonalElevation = 0.dp
-            ) {
-                when {
+            when {
                     // Paste mode - show Paste/Cancel
                     copyMoveState.hasPendingOperation() -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Cancel button
-                            TextButton(onClick = { 
-                                copyMoveState.clear()
-                            }) {
-                                Text("Cancel")
+                        FloatingCopyMoveBar(
+                            onCancelClick = { copyMoveState.clear() },
+                            menuIcon = painterResource(R.drawable.menu_24),
+                            onMenuClick = { showMenu = true },
+                            menuContent = {
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    // Menu items can be added here if needed in paste mode
+                                    // For now, keeping it simple
+                                }
                             }
-                            
-                            // Paste button
-                            Button(onClick = {
+                        ) {
+                            FloatingCopyMoveAction(label = "Paste", onClick = {
                                 // Paste operation will be handled when user navigates to destination
                                 // For root level, paste to root (null parentId)
                                 scope.launch {
@@ -309,7 +307,7 @@ fun AlbumsScreen(
                                         progressMessage = "Pasting..."
                                         progressCurrent = 0
                                         progressTotal = 1
-                                        
+
                                         val copyMoveService = CopyMoveService(
                                             albumDao = Modules.provideDb(context).albumDao(),
                                             photoDao = Modules.provideDb(context).photoDao(),
@@ -317,11 +315,11 @@ fun AlbumsScreen(
                                             photoRepo = Modules.providePhotoRepository(context),
                                             storage = Modules.provideStorage(context)
                                         )
-                                        
+
                                         val albumIds = copyMoveState.getSelectedAlbumIds()
                                         val photoIds = copyMoveState.getSelectedPhotoIds()
                                         val operationType = copyMoveState.operationType.value
-                                        
+
                                         val result = if (operationType == com.example.photoapp10.core.copymove.CopyMoveState.OperationType.COPY) {
                                             copyMoveService.copyItems(
                                                 albumIds = albumIds,
@@ -345,9 +343,9 @@ fun AlbumsScreen(
                                                 }
                                             )
                                         }
-                                        
+
                                         showProgressDialog = false
-                                        
+
                                         if (result.isSuccess) {
                                             Toast.makeText(
                                                 context,
@@ -361,7 +359,7 @@ fun AlbumsScreen(
                                                 Toast.LENGTH_LONG
                                             ).show()
                                         }
-                                        
+
                                         copyMoveState.clear()
                                         selectionState.clearSelection()
                                     } catch (e: Exception) {
@@ -374,71 +372,17 @@ fun AlbumsScreen(
                                         timber.log.Timber.e(e, "Error during paste operation")
                                     }
                                 }
-                            }) {
-                                Text("Paste")
-                            }
-                            
-                            // Hamburger menu
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.menu_24),
-                                        contentDescription = "Menu"
-                                    )
-                                }
-                                
-                                DropdownMenu(
-                                    expanded = showMenu,
-                                    onDismissRequest = { showMenu = false }
-                                ) {
-                                    // Menu items can be added here if needed in paste mode
-                                    // For now, keeping it simple
-                                }
-                            }
+                            })
                         }
                     }
-                    
+
                     // Selection mode - show Copy/Move/Cancel
                     selectionState.isSelectionMode.value -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Cancel button
-                            TextButton(onClick = { 
-                                selectionState.clearSelection()
-                            }) {
-                                Text("Cancel")
-                            }
-                            
-                            // Copy button
-                            Button(onClick = {
-                                val selectedAlbums = selectionState.getSelectedItems()
-                                copyMoveState.startCopy(selectedAlbums, emptyList())
-                                selectionState.clearSelection()
-                            }) {
-                                Text("Copy")
-                            }
-                            
-                            // Move button
-                            Button(onClick = {
-                                val selectedAlbums = selectionState.getSelectedItems()
-                                copyMoveState.startMove(selectedAlbums, emptyList())
-                                selectionState.clearSelection()
-                            }) {
-                                Text("Move")
-                            }
-                            
-                            // Hamburger menu
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.menu_24),
-                                        contentDescription = "Menu"
-                                    )
-                                }
-                                
+                        FloatingCopyMoveBar(
+                            onCancelClick = { selectionState.clearSelection() },
+                            menuIcon = painterResource(R.drawable.menu_24),
+                            onMenuClick = { showMenu = true },
+                            menuContent = {
                                 DropdownMenu(
                                     expanded = showMenu,
                                     onDismissRequest = { showMenu = false }
@@ -502,6 +446,17 @@ fun AlbumsScreen(
                                     )
                                 }
                             }
+                        ) {
+                            FloatingCopyMoveAction(label = "Copy", onClick = {
+                                val selectedAlbums = selectionState.getSelectedItems()
+                                copyMoveState.startCopy(selectedAlbums, emptyList())
+                                selectionState.clearSelection()
+                            })
+                            FloatingCopyMoveAction(label = "Move", onClick = {
+                                val selectedAlbums = selectionState.getSelectedItems()
+                                copyMoveState.startMove(selectedAlbums, emptyList())
+                                selectionState.clearSelection()
+                            })
                         }
                     }
                     
@@ -519,7 +474,6 @@ fun AlbumsScreen(
                             onRightClick = { showMenu = true }
                         )
                     }
-                }
             }
         }
     ) { inner ->
@@ -527,9 +481,9 @@ fun AlbumsScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(inner),
+                .padding(top = inner.calculateTopPadding()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(12.dp)
+            contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 132.dp)
         ) {
             // Temp Mode banner — content auto-deletes in 7 days
             if (TempModeManager.isTempMode(context)) {
@@ -735,7 +689,7 @@ fun AlbumsScreen(
     ) {
         val isTempMode = TempModeManager.isTempMode(context)
 
-        ModernMoreMenuDialog(
+        ModernMoreMenuBottomSheet(
             isTempMode = isTempMode,
             onDismissRequest = { showMenu = false },
             onBackup = {
@@ -784,7 +738,7 @@ fun AlbumsScreen(
 
     // Sort menu - comprehensive with all options
     if (showSortMenu) {
-        ModernSortAlbumsDialog(
+        ModernSortAlbumsBottomSheet(
             onDismissRequest = { showSortMenu = false },
             onNewestToOldest = {
                 timber.log.Timber.d("AlbumsScreen: Newest to Oldest clicked")
@@ -811,8 +765,9 @@ fun AlbumsScreen(
     
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModernMoreMenuDialog(
+private fun ModernMoreMenuBottomSheet(
     isTempMode: Boolean,
     onDismissRequest: () -> Unit,
     onBackup: () -> Unit,
@@ -822,7 +777,18 @@ private fun ModernMoreMenuDialog(
     onAbout: () -> Unit,
     onSignOut: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismissRequest) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        containerColor = Color(0xFFFCF8FF),
+        contentColor = Color(0xFF1F2430),
+        tonalElevation = 6.dp,
+        scrimColor = Color.Black.copy(alpha = 0.46f),
+        dragHandle = { ModernBottomSheetHandle() }
+    ) {
         ModernMoreMenuContent(
             isTempMode = isTempMode,
             onBackup = onBackup,
@@ -832,23 +798,40 @@ private fun ModernMoreMenuDialog(
             onAbout = onAbout,
             onSignOut = onSignOut
         )
+        Spacer(
+            modifier = Modifier
+                .navigationBarsPadding()
+                .height(12.dp)
+        )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModernSortAlbumsDialog(
+private fun ModernSortAlbumsBottomSheet(
     onDismissRequest: () -> Unit,
     onNewestToOldest: () -> Unit,
     onOldestToNewest: () -> Unit,
     onNameAscending: () -> Unit,
     onNameDescending: () -> Unit
 ) {
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+    ModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        shape = RoundedCornerShape(26.dp),
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
         containerColor = Color(0xFFFCF8FF),
-        tonalElevation = 0.dp,
-        title = {
+        contentColor = Color(0xFF1F2430),
+        tonalElevation = 6.dp,
+        scrimColor = Color.Black.copy(alpha = 0.46f),
+        dragHandle = { ModernBottomSheetHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        ) {
             Text(
                 text = "Sort Albums",
                 color = Color(0xFF1F2430),
@@ -856,56 +839,81 @@ private fun ModernSortAlbumsDialog(
                     fontWeight = FontWeight.SemiBold
                 )
             )
-        },
-        text = {
-            Column {
-                Text(
-                    text = "Choose how to sort your albums",
-                    color = Color(0xFF6B6476),
-                    style = MaterialTheme.typography.bodySmall
-                )
 
-                Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-                ModernSortOptionRow(
-                    badge = "1",
-                    title = "Newest to Oldest",
-                    subtitle = "Recently created albums first",
-                    onClick = onNewestToOldest
-                )
-                ModernSortOptionRow(
-                    badge = "9",
-                    title = "Oldest to Newest",
-                    subtitle = "Earliest created albums first",
-                    onClick = onOldestToNewest
-                )
-                ModernSortOptionRow(
-                    badge = "A",
-                    title = "A-Z",
-                    subtitle = "Album names ascending",
-                    onClick = onNameAscending
-                )
-                ModernSortOptionRow(
-                    badge = "Z",
-                    title = "Z-A",
-                    subtitle = "Album names descending",
-                    onClick = onNameDescending
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onDismissRequest,
-                modifier = Modifier.padding(end = 6.dp, bottom = 4.dp)
+            Text(
+                text = "Choose how to sort your albums",
+                color = Color(0xFF6B6476),
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            ModernSortOptionRow(
+                badge = "1",
+                title = "Newest to Oldest",
+                subtitle = "Recently created albums first",
+                onClick = onNewestToOldest
+            )
+            ModernSortOptionRow(
+                badge = "9",
+                title = "Oldest to Newest",
+                subtitle = "Earliest created albums first",
+                onClick = onOldestToNewest
+            )
+            ModernSortOptionRow(
+                badge = "A",
+                title = "A-Z",
+                subtitle = "Album names ascending",
+                onClick = onNameAscending
+            )
+            ModernSortOptionRow(
+                badge = "Z",
+                title = "Z-A",
+                subtitle = "Album names descending",
+                onClick = onNameDescending
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                horizontalArrangement = Arrangement.End
             ) {
-                Text(
-                    text = "Cancel",
-                    color = Color(0xFF2B0B5F),
-                    fontWeight = FontWeight.SemiBold
-                )
+                TextButton(onClick = onDismissRequest) {
+                    Text(
+                        text = "Cancel",
+                        color = Color(0xFF2B0B5F),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
+
+            Spacer(
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .height(12.dp)
+            )
         }
-    )
+    }
+}
+
+@Composable
+private fun ModernBottomSheetHandle() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(48.dp)
+                .height(5.dp)
+                .background(Color(0xFFD8D0E2), RoundedCornerShape(50))
+        )
+    }
 }
 
 @Composable
@@ -972,17 +980,8 @@ private fun ModernMoreMenuContent(
 ) {
     Column(
         modifier = Modifier
-            .width(240.dp)
-            .shadow(
-                elevation = 18.dp,
-                shape = RoundedCornerShape(22.dp),
-                clip = false
-            )
-            .background(
-                color = Color(0xFFFCF8FF),
-                shape = RoundedCornerShape(22.dp)
-            )
-            .padding(horizontal = 14.dp, vertical = 14.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 6.dp)
     ) {
         if (isTempMode) {
             ModernMenuRow(
